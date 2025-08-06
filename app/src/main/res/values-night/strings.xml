@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="DevicePolicyManagerService">DevicePolicyManagerService:</string>
+    <string name="hasAccountsOnAnyUser"><![CDATA[hasAccountsOnAnyUser() --> False]]></string>
+    <string name="isAdminTestOnlyLocked"><![CDATA[isAdminTestOnlyLocked() --> True]]></string>
+    <string name="SELinux">SELinux</string>
+    <string name="checkSELinuxAccess"><![CDATA[checkSELinuxAccess() --> True]]></string>
+    <string name="enforceCanSetDeviceOwnerLocked"><![CDATA[enforceCanSetDeviceOwnerLocked() --> Bypass]]></string>
+    <string name="checkDeviceOwnerProvisioningPreConditionLocked"><![CDATA[checkDeviceOwnerProvisioningPreConditionLocked() --> 0]]></string>
+    <string name="Show_Notice">Show Notice</string>
+    <string name="Notice_Test">Notice Test</string>
+</resources>

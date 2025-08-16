@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="DevicePolicyManagerService">DevicePolicyManagerService:</string>
+    <string name="hasAccountsOnAnyUser"><![CDATA[hasAccountsOnAnyUser() --> False]]></string>
+    <string name="isAdminTestOnlyLocked"><![CDATA[isAdminTestOnlyLocked() --> True]]></string>
+    <string name="SELinux">SELinux</string>
+    <string name="checkSELinuxAccess"><![CDATA[checkSELinuxAccess() --> True]]></string>
+    <string name="enforceCanSetDeviceOwnerLocked"><![CDATA[enforceCanSetDeviceOwnerLocked() --> Bypass]]></string>
+    <string name="checkDeviceOwnerProvisioningPreConditionLocked"><![CDATA[checkDeviceOwnerProvisioningPreConditionLocked() --> 0]]></string>
+    <string name="Show_Notice">Show Log</string>
+    <string name="Notice_Test">Notice Test</string>
+    <string name="ColorOSHome">ColorOS Home OplusLockManager:</string>
+    <string name="isExceededLockLimit"><![CDATA[isExceededLockLimit() --> False]]></string>
+    <string name="isAllowDefaultLock"><![CDATA[isAllowDefaultLock() --> True]]></string>
+    <string name="use_system_whitelist">System application whitelist mode</string>
+    <string name="System_App_whitelist_info">Let system apps also use whitelist mode to align with third-party app behavior. All applications (including third-party applications and system applications) cannot be detected by default and need to be checked in the application list to be readable.</string>
+    <string name="show_notice_tip">Displaying Hook notifications will trigger a Toast during the Hook process, which can aid in your debugging; however, this notification may cause the system to freeze during the Hook.</string>
+    <string name="no_removeaccount_to_setadmin_tip">Allow not to remove account settings Device Administrator</string>
+    <string name="remove_background_lock_limit_tip">Removed the limit on the number of recent task locks in ColorOS</string>
+    <string name="isUseless"><![CDATA[isUseless() --> False]]></string>
+    <string name="input_tip">Enter the app name or package name search</string>
+</resources>

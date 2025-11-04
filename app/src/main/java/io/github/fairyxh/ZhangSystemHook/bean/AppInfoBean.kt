@@ -9,5 +9,6 @@ import java.io.Serializable
 data class AppInfoBean(
     var icon: Drawable? = null,
     var name: String,
-    var packageName: String
+    var packageName: String,
+    var isSystemApp: Boolean = false
 ) : Serializable

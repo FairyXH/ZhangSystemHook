@@ -4,6 +4,7 @@ import com.highcapable.yukihookapi.hook.entity.YukiBaseHooker
 import com.highcapable.yukihookapi.hook.factory.method
 import com.highcapable.yukihookapi.hook.type.java.BooleanType
 import com.highcapable.yukihookapi.hook.type.java.IntType
+import com.highcapable.yukihookapi.hook.type.java.StringType
 import io.github.fairyxh.ZhangSystemHook.application.SystemNotifier
 
 object DPMHooker : YukiBaseHooker() {
@@ -14,6 +15,7 @@ object DPMHooker : YukiBaseHooker() {
 
     private fun hooksystem() {
         SystemNotifier.sendUserMsg(msg = "DPMHooker 执行Hook")
+
         "com.android.server.devicepolicy.DevicePolicyManagerService".toClass().apply {
             method {
                 name = "hasAccountsOnAnyUser"

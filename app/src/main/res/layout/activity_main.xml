@@ -258,38 +258,7 @@
                 </LinearLayout>
 
                 <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginLeft="15dp"
-                    android:layout_marginTop="5dp"
-                    android:layout_marginRight="15dp"
-                    android:text="Service Check:"
-                    android:textColor="@color/colorTextGray"
-                    android:textSize="14sp" />
-
-                <TextView
                     android:id="@+id/service_check_result"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginLeft="15dp"
-                    android:layout_marginRight="15dp"
-                    android:layout_marginBottom="10dp"
-                    android:text="@string/loading"
-                    android:textColor="@color/colorTextGray"
-                    android:textSize="12sp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginLeft="15dp"
-                    android:layout_marginTop="5dp"
-                    android:layout_marginRight="15dp"
-                    android:text="Settings Secure Check:"
-                    android:textColor="@color/colorTextGray"
-                    android:textSize="14sp" />
-
-                <TextView
-                    android:id="@+id/settings_secure_check_result"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginLeft="15dp"
@@ -462,7 +431,7 @@
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="871dp"
                 android:layout_marginLeft="15dp"
                 android:layout_marginTop="15dp"
                 android:layout_marginRight="15dp"
@@ -525,32 +494,6 @@
                     android:textSize="12sp" />
 
                 <com.google.android.material.materialswitch.MaterialSwitch
-                    android:id="@+id/show_notice_switch"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/Show_Notice"
-                    android:textAllCaps="false"
-                    android:textColor="@color/colorTextGray"
-                    android:textSize="15sp" />
-
-                <TextView
-                    android:id="@+id/textView8"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="10dp"
-                    android:alpha="0.6"
-                    android:lineSpacingExtra="6dp"
-                    android:text="@string/show_notice_tip"
-                    android:textColor="@color/colorTextDark"
-                    android:textSize="12sp" />
-
-                <Button
-                    android:id="@+id/button_notice_test"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/Notice_Test" />
-
-                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/system_whitelist_switch2"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -580,6 +523,74 @@
                     android:text="@string/apps_config_tip"
                     android:textColor="@color/colorTextDark"
                     android:textSize="12sp" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/hook_android_kernel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/is_hook_android_kernel"
+                    android:textAllCaps="false"
+                    android:textColor="@color/design_default_color_error"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/textView12"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:alpha="0.6"
+                    android:lineSpacingExtra="6dp"
+                    android:text="@string/hook_android_kernel"
+                    android:textColor="@color/design_default_color_error"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/MethodMonitor_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/MethodMonitor_text"
+                    android:visibility="gone"
+                    android:textAllCaps="false"
+                    android:textColor="@color/colorTextGray"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/textView13"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:alpha="0.6"
+                    android:visibility="gone"
+                    android:lineSpacingExtra="6dp"
+                    android:text="@string/MethodMonitor_tip"
+                    android:textColor="@color/design_default_color_error"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/show_notice_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/Show_Notice"
+                    android:textAllCaps="false"
+                    android:textColor="@color/colorTextGray"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/textView8"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:alpha="0.6"
+                    android:lineSpacingExtra="6dp"
+                    android:text="@string/show_notice_tip"
+                    android:textColor="@color/colorTextDark"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/button_notice_test"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/Notice_Test" />
 
             </LinearLayout>
 

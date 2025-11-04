@@ -7,13 +7,13 @@
     <string name="module_not_activated">Module not activated</string>
     <string name="module_not_fully_activated">Module not fully activated</string>
     <string name="module_is_activated">Module is activated</string>
-    <string name="display_settings">Display settings</string>
+    <string name="display_settings">Settings</string>
     <string name="hide_app_icon_on_launcher">Hide app icons on launcher</string>
     <string name="hide_app_icon_on_launcher_tip">After hiding the app icon, the interface may be closed and will no longer be displayed on the launcher. You can find and open the module settings in LSPosed.</string>
     <string name="hide_app_icon_on_launcher_notice">Note: Be sure to turn off the \"Force apps to show launcher icons\" feature in LSPosed</string>
-    <string name="apps_settings">Apps Whitelist Settings</string>
-    <string name="mgr_apps_config">Management Apps Whitelist Config</string>
-    <string name="apps_config_tip">By default, only third-party applications operate in whitelist mode, while system applications can detect accessibility. To ensure stability, even in the state of enabling the system application whitelist, some critical system components will still not prevent reading.</string>
+    <string name="apps_settings">Apps Settings</string>
+    <string name="mgr_apps_config">Management Apps Config</string>
+    <string name="apps_config_tip">In order to ensure stability, under the condition of enabling the system application whitelist, certain critical system components will still not be prevented from accessing accessibility features. However, users are allowed to decide whether to apply accessibility to these critical components. If, when using the whitelist mode, some applications requiring accessibility are automatically closed, please try allowing the system interface to access accessibility features. Third-party applications are only permitted to use whitelist mode.</string>
     <string name="confirm">Confirm</string>
     <string name="cancel">Cancel</string>
     <string name="more">More</string>
@@ -49,10 +49,14 @@
     <string name="isExceededLockLimit"><![CDATA[isExceededLockLimit() --> False]]></string>
     <string name="isAllowDefaultLock"><![CDATA[isAllowDefaultLock() --> True]]></string>
     <string name="use_system_whitelist">System application whitelist mode</string>
-    <string name="System_App_whitelist_info">Let system apps also use whitelist mode to align with third-party app behavior. All applications (including third-party applications and system applications) cannot be detected by default and need to be checked in the application list to be readable.</string>
-    <string name="show_notice_tip">Displaying Hook notifications will trigger a Toast during the Hook process, which can aid in your debugging; however, this notification may cause the system to freeze during the Hook.</string>
+    <string name="System_App_whitelist_info">The default system app uses blacklist mode. When this switch is turned on, system apps also use whitelist mode, which is consistent with third-party app behavior. All applications (including third-party applications and system applications) cannot be detected by default and need to be checked in the application list to be readable.</string>
+    <string name="show_notice_tip">Displaying Hook notifications will trigger a Toast during the Hook process, which can aid in your debugging;</string>
     <string name="no_removeaccount_to_setadmin_tip">Allow not to remove account settings Device Administrator</string>
     <string name="remove_background_lock_limit_tip">Removed the limit on the number of recent task locks in ColorOS</string>
     <string name="isUseless"><![CDATA[isUseless() --> False]]></string>
     <string name="input_tip">Enter the app name or package name search</string>
+    <string name="hook_android_kernel">(Dangerous) may reduce stability. By default, it is allowed to start with \"Android.\" The system package names at the beginning are readable, and when this switch is turned on, they will also be prevented from reading.</string>
+    <string name="is_hook_android_kernel">Allow the blocking of system components from accessing accessibility features.</string>
+    <string name="MethodMonitor_text">方法监视器</string>
+    <string name="MethodMonitor_tip">(调试功能)挂钩所有方法,方法被调用时输出日志</string>
 </resources>

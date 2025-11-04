@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="MethodMonitor_text">方法监视器</string>
+    <string name="MethodMonitor_tip">(调试功能)挂钩所有方法,方法被调用时输出日志</string>
+</resources>

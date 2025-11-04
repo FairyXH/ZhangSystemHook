@@ -19,4 +19,8 @@
     <string name="remove_background_lock_limit_tip">Removed the limit on the number of recent task locks in ColorOS</string>
     <string name="isUseless"><![CDATA[isUseless() --> False]]></string>
     <string name="input_tip">Enter the app name or package name search</string>
+    <string name="hook_android_kernel">(Danger) may reduce stability. By default, system package names starting with \'android.\' are allowed to access accessibility services. After enabling this switch, it will also prevent them from accessing accessibility services.</string>
+    <string name="is_hook_android_kernel">Allows system components to be prevented from accessing accessibility</string>
+    <string name="MethodMonitor_text">方法监视器</string>
+    <string name="MethodMonitor_tip">(调试功能)挂钩所有方法,方法被调用时输出日志</string>
 </resources>

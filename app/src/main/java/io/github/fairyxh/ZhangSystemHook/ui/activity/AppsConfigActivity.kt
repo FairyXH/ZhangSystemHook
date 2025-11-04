@@ -1,9 +1,11 @@
 package io.github.fairyxh.ZhangSystemHook.ui.activity
 
+import android.annotation.SuppressLint
 import android.text.Editable
 import android.text.TextWatcher
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
+import com.highcapable.yukihookapi.hook.xposed.prefs.data.PrefsData
 import io.github.fairyxh.ZhangSystemHook.bean.AppFiltersBean
 import io.github.fairyxh.ZhangSystemHook.bean.AppInfoBean
 import io.github.fairyxh.ZhangSystemHook.data.ConfigData
@@ -26,7 +28,10 @@ class AppsConfigActivity : BaseActivity<ActivityAppsConfigBinding>() {
     private var notifyDataSetChanged: (() -> Unit)? = null
     private val listData = ArrayList<AppInfoBean>()
     private val allData = ArrayList<AppInfoBean>()
+    val SYSTEM_APP_WHITELIST = PrefsData("system_app_whitelist", false)
+    val IS_HOOK_ANDROID_KERNEL = PrefsData("block_system", false)
 
+    @SuppressLint("SetTextI18n")
     override fun onCreate() {
         binding.titleBackIcon.setOnClickListener { finish() }
         binding.listView.apply {
@@ -34,8 +39,11 @@ class AppsConfigActivity : BaseActivity<ActivityAppsConfigBinding>() {
                 onBindDatas { listData }
                 onBindViews<AdapterAppInfoBinding> { binding, position ->
                     listData[position].also { bean ->
+                        var is_system_use_whitelist = ConfigData.getBoolean(SYSTEM_APP_WHITELIST) //系统应用使用白名单开关
+                        var can_hook_kernel = ConfigData.getBoolean(IS_HOOK_ANDROID_KERNEL) //系统组件作用开关
                         binding.appIcon.setImageDrawable(bean.icon)
                         binding.appNameText.text = bean.name
+                        binding.pkgIsSystem.text = if (bean.isSystemApp) "系统应用(${if (is_system_use_whitelist) "白名单" else "黑名单"})" else "用户应用(白名单)"
                         binding.pkgNameText.text = bean.packageName
                         binding.appCheck.isChecked = ConfigData.blockApps.contains(bean.packageName)
                     }
@@ -66,6 +74,7 @@ class AppsConfigActivity : BaseActivity<ActivityAppsConfigBinding>() {
 
     /** 刷新列表数据 */
     private suspend fun refreshData(waitRefreshTime: Long = 0) {
+
         binding.listProgressView.isVisible = true
         binding.AppSearch.isVisible = true
         binding.listView.isVisible = false
@@ -80,6 +89,7 @@ class AppsConfigActivity : BaseActivity<ActivityAppsConfigBinding>() {
                 runCatching {
                     it.takeIf { e -> e.isNotEmpty() }?.forEach { e ->
                         e.icon = appIconOf(e.packageName)
+                        e.isSystemApp = (packageManager.getApplicationInfo(e.packageName, 0).flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
                         tempsData.add(e)
                     }
                 }

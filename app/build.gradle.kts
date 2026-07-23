@@ -53,6 +53,14 @@ android {
     //androidResources.additionalParameters += listOf("--allow-reserved-package-id", "--package-id", "0x80")
 }
 
+tasks.register("printReleaseInfo") {
+    doLast {
+        println("versionCode=${android.defaultConfig.versionCode}")
+        println("versionName=${android.defaultConfig.versionName}")
+        println("发布时Tag应当写：(${android.defaultConfig.versionCode}-${android.defaultConfig.versionName})")
+        }
+}
+
 dependencies {
     compileOnly(de.robv.android.xposed.api)
     implementation(com.highcapable.yukihookapi.api)

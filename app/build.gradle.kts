@@ -9,21 +9,17 @@ plugins {
     autowire(libs.plugins.flexi.locale)
 }
 
-val dateFormat = SimpleDateFormat("M.dd", Locale.CHINA)
-val today = dateFormat.format(Date())
-
 android {
     namespace = property.project.app.packageName
     compileSdk = property.project.android.compileSdk
-
+    val ver = SimpleDateFormat("yyyyMMdd", Locale.CHINA)
+        .format(Date())
     defaultConfig {
         applicationId = property.project.app.packageName
         minSdk = property.project.android.minSdk
         targetSdk = property.project.android.targetSdk
-        versionName = "Zhang.$today"
-        versionCode = SimpleDateFormat("yyyyMMdd", Locale.CHINA)
-            .format(Date())
-            .toInt()
+        versionName = ver
+        versionCode =ver.toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {

@@ -66,4 +66,21 @@
     <string name="Enable_High_Performance_Mode_Tip">开启高性能模式，将关闭部分Hook以提高性能</string>
     <string name="AllowaddClient_Text">允许 addClient 方法</string>
     <string name="AllowaddClient_Info">默认情况下，被阻止的应用不再享有被读取的功能，此行为由 Android Client SDK 的设计所决定。启用该选项后，将允许应用注册无障碍客户端，但可能会降低部分防检测能力。</string>
+    <string name="block_screen_capture_detection">禁止所有App检测截图</string>
+    <string name="block_screen_capture_detection_tip">阻止第三方应用通过Android截图检测API感知截图，不影响系统截图、动画和文件保存。</string>
+    <string name="android14_screenshot_blocker">Android 14 截图检测拦截</string>
+    <string name="android14_screenshot_blocker_tip">使用系统官方 ScreenCaptureCallback API，仅拦截截图检测回调。</string>
+    <string name="enhanced_screenshot_blocker">增强截屏防检测</string>
+    <string name="enhanced_screenshot_blocker_tip">过滤 MediaStore 截图记录和 ContentObserver 通知；普通图片读取不受影响。</string>
+    <string name="block_communication_mode">禁止App切换通话模式</string>
+    <string name="block_communication_mode_tip">防止普通第三方应用切换通信音频路由或蓝牙SCO，具有系统通话权限的服务不受影响。</string>
+    <string name="test_communication_button">测试：模块App切换通话模式</string>
+    <string name="test_screen_capture_button">测试：模块App检测截屏</string>
+    <string name="test_communication_entered">模块App已请求通话模式，再按一次恢复</string>
+    <string name="test_communication_released">模块App已请求恢复普通模式</string>
+    <string name="test_screen_capture_armed">已注册截屏检测，请执行系统截屏</string>
+    <string name="test_screen_capture_detected">模块App收到截屏回调，拦截未生效</string>
+    <string name="test_screen_capture_timeout">10秒内未收到截屏回调，结合LSPosed日志判断是否拦截成功</string>
+    <string name="test_screen_capture_unsupported">当前系统不支持截屏回调测试</string>
+    <string name="test_failed">测试失败：%1$s</string>
 </resources>

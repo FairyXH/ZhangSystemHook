@@ -605,6 +605,63 @@
                     android:textSize="12sp" />
 
                 <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/block_screen_capture_detection_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/android14_screenshot_blocker"
+                    android:textAllCaps="false"
+                    android:textColor="@color/colorTextGray"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:alpha="0.6"
+                    android:lineSpacingExtra="6dp"
+                    android:text="@string/android14_screenshot_blocker_tip"
+                    android:textColor="@color/colorTextDark"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/enhanced_screenshot_blocker_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/enhanced_screenshot_blocker"
+                    android:textAllCaps="false"
+                    android:textColor="@color/colorTextGray"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:alpha="0.6"
+                    android:lineSpacingExtra="6dp"
+                    android:text="@string/enhanced_screenshot_blocker_tip"
+                    android:textColor="@color/colorTextDark"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/block_communication_mode_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/block_communication_mode"
+                    android:textAllCaps="false"
+                    android:textColor="@color/colorTextGray"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:alpha="0.6"
+                    android:lineSpacingExtra="6dp"
+                    android:text="@string/block_communication_mode_tip"
+                    android:textColor="@color/colorTextDark"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/MethodMonitor_switch"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -651,6 +708,26 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/Notice_Test" />
+
+                <Button
+                    android:id="@+id/button_communication_mode_test"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/test_communication_button" />
+
+                <Button
+                    android:id="@+id/button_screen_capture_test"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/test_screen_capture_button" />
+
+                <TextView
+                    android:id="@+id/test_result_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="6dp"
+                    android:textColor="@color/colorTextDark"
+                    android:textSize="12sp" />
 
             </LinearLayout>
 

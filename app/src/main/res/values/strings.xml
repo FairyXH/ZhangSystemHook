@@ -65,4 +65,21 @@
     <string name="Enable_High_Performance_Mode_Tip">Enabling high-performance mode will disable certain hooks to improve performance, effective immediately</string>
     <string name="AllowaddClient_Text">Allow addClient Method</string>
     <string name="AllowaddClient_Info">By default, blocked apps will no longer be able to read accessibility data. This behavior is determined by the Android Client SDK design. Enabling this option allows apps to register as accessibility clients, but may reduce certain anti-detection capabilities.</string>
+    <string name="block_screen_capture_detection">Block screenshot detection for all apps</string>
+    <string name="block_screen_capture_detection_tip">Prevents third-party apps from receiving Android screen capture callback events. Screenshots and screenshot files remain available.</string>
+    <string name="android14_screenshot_blocker">Android 14 screenshot detection blocking</string>
+    <string name="android14_screenshot_blocker_tip">Uses the official ScreenCaptureCallback API and only blocks screenshot detection callbacks.</string>
+    <string name="enhanced_screenshot_blocker">Enhanced screenshot detection blocking</string>
+    <string name="enhanced_screenshot_blocker_tip">Filters screenshot records and ContentObserver notifications from MediaStore without blocking normal image reads.</string>
+    <string name="block_communication_mode">Block apps from switching to call mode</string>
+    <string name="block_communication_mode_tip">Prevents ordinary third-party apps from selecting communication audio routes or Bluetooth SCO. Privileged system calling services remain allowed.</string>
+    <string name="test_communication_button">Test: module app call mode</string>
+    <string name="test_screen_capture_button">Test: module app screenshot detection</string>
+    <string name="test_communication_entered">Module app requested call mode; press again to restore</string>
+    <string name="test_communication_released">Module app requested normal mode</string>
+    <string name="test_screen_capture_armed">Screenshot callback registered; take a system screenshot</string>
+    <string name="test_screen_capture_detected">Module app received screenshot callback; blocking failed</string>
+    <string name="test_screen_capture_timeout">No screenshot callback for 10 seconds; check LSPosed logs to confirm blocking</string>
+    <string name="test_screen_capture_unsupported">Screenshot callback test is unavailable</string>
+    <string name="test_failed">Test failed: %1$s</string>
 </resources>

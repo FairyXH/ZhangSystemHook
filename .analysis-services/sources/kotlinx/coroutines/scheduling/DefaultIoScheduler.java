@@ -1,0 +1,53 @@
+package kotlinx.coroutines.scheduling;
+
+/* JADX INFO: compiled from: Dispatcher.kt */
+/* JADX INFO: loaded from: classes.dex */
+@kotlin.Metadata(d1 = {"\u0000>\n\u0002\u0018\u0002\n\u0002\u0018\u0002\n\u0002\u0018\u0002\n\u0002\b\u0002\n\u0002\u0018\u0002\n\u0002\b\u0004\n\u0002\u0010\u0002\n\u0002\b\u0002\n\u0002\u0018\u0002\n\u0000\n\u0002\u0018\u0002\n\u0002\u0018\u0002\n\u0002\b\u0005\n\u0002\u0010\b\n\u0000\n\u0002\u0010\u000e\n\u0000\bÀ\u0002\u0018\u00002\u00020\u00012\u00020\u0002B\u0007\b\u0002¢\u0006\u0002\u0010\u0003J\b\u0010\t\u001a\u00020\nH\u0016J\u001c\u0010\u000b\u001a\u00020\n2\u0006\u0010\f\u001a\u00020\r2\n\u0010\u000e\u001a\u00060\u000fj\u0002`\u0010H\u0016J\u001c\u0010\u0011\u001a\u00020\n2\u0006\u0010\f\u001a\u00020\r2\n\u0010\u000e\u001a\u00060\u000fj\u0002`\u0010H\u0017J\u0010\u0010\u0012\u001a\u00020\n2\u0006\u0010\u0013\u001a\u00020\u000fH\u0016J\u0010\u0010\u0014\u001a\u00020\u00052\u0006\u0010\u0015\u001a\u00020\u0016H\u0017J\b\u0010\u0017\u001a\u00020\u0018H\u0016R\u000e\u0010\u0004\u001a\u00020\u0005X\u0082\u0004¢\u0006\u0002\n\u0000R\u0014\u0010\u0006\u001a\u00020\u00028VX\u0096\u0004¢\u0006\u0006\u001a\u0004\b\u0007\u0010\b¨\u0006\u0019"}, d2 = {"Lkotlinx/coroutines/scheduling/DefaultIoScheduler;", "Lkotlinx/coroutines/ExecutorCoroutineDispatcher;", "Ljava/util/concurrent/Executor;", "()V", "default", "Lkotlinx/coroutines/CoroutineDispatcher;", "executor", "getExecutor", "()Ljava/util/concurrent/Executor;", "close", "", "dispatch", "context", "Lkotlin/coroutines/CoroutineContext;", "block", "Ljava/lang/Runnable;", "Lkotlinx/coroutines/Runnable;", "dispatchYield", "execute", "command", "limitedParallelism", "parallelism", "", "toString", "", "external__kotlinx.coroutines__linux_glibc_common__kotlinx_coroutines-host"}, k = 1, mv = {1, 9, 0}, xi = 48)
+public final class DefaultIoScheduler extends kotlinx.coroutines.ExecutorCoroutineDispatcher implements java.util.concurrent.Executor {
+    public static final kotlinx.coroutines.scheduling.DefaultIoScheduler INSTANCE = new kotlinx.coroutines.scheduling.DefaultIoScheduler();
+    private static final kotlinx.coroutines.CoroutineDispatcher default = kotlinx.coroutines.scheduling.UnlimitedIoScheduler.INSTANCE.limitedParallelism(kotlinx.coroutines.internal.SystemPropsKt__SystemProps_commonKt.systemProp$default(kotlinx.coroutines.DispatchersKt.IO_PARALLELISM_PROPERTY_NAME, kotlin.ranges.RangesKt.coerceAtLeast(64, kotlinx.coroutines.internal.SystemPropsKt.getAVAILABLE_PROCESSORS()), 0, 0, 12, (java.lang.Object) null));
+
+    private DefaultIoScheduler() {
+    }
+
+    @Override // kotlinx.coroutines.ExecutorCoroutineDispatcher
+    public java.util.concurrent.Executor getExecutor() {
+        return this;
+    }
+
+    @Override // java.util.concurrent.Executor
+    public void execute(java.lang.Runnable command) {
+        kotlin.jvm.internal.Intrinsics.checkNotNullParameter(command, "command");
+        mo12864dispatch(kotlin.coroutines.EmptyCoroutineContext.INSTANCE, command);
+    }
+
+    @Override // kotlinx.coroutines.CoroutineDispatcher
+    public kotlinx.coroutines.CoroutineDispatcher limitedParallelism(int parallelism) {
+        return kotlinx.coroutines.scheduling.UnlimitedIoScheduler.INSTANCE.limitedParallelism(parallelism);
+    }
+
+    @Override // kotlinx.coroutines.CoroutineDispatcher
+    /* JADX INFO: renamed from: dispatch */
+    public void mo12864dispatch(kotlin.coroutines.CoroutineContext context, java.lang.Runnable block) {
+        kotlin.jvm.internal.Intrinsics.checkNotNullParameter(context, "context");
+        kotlin.jvm.internal.Intrinsics.checkNotNullParameter(block, "block");
+        default.mo12864dispatch(context, block);
+    }
+
+    @Override // kotlinx.coroutines.CoroutineDispatcher
+    public void dispatchYield(kotlin.coroutines.CoroutineContext context, java.lang.Runnable block) {
+        kotlin.jvm.internal.Intrinsics.checkNotNullParameter(context, "context");
+        kotlin.jvm.internal.Intrinsics.checkNotNullParameter(block, "block");
+        default.dispatchYield(context, block);
+    }
+
+    @Override // kotlinx.coroutines.ExecutorCoroutineDispatcher, java.io.Closeable, java.lang.AutoCloseable
+    public void close() {
+        throw new java.lang.IllegalStateException("Cannot be invoked on Dispatchers.IO".toString());
+    }
+
+    @Override // kotlinx.coroutines.CoroutineDispatcher
+    public java.lang.String toString() {
+        return "Dispatchers.IO";
+    }
+}

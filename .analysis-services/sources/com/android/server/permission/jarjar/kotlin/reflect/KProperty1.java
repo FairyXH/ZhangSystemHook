@@ -1,0 +1,26 @@
+package com.android.server.permission.jarjar.kotlin.reflect;
+
+/* JADX INFO: compiled from: KProperty.kt */
+/* JADX INFO: loaded from: classes2.dex */
+@com.android.server.permission.jarjar.kotlin.Metadata(d1 = {"\u0000\"\n\u0002\u0018\u0002\n\u0002\b\u0002\n\u0002\u0018\u0002\n\u0002\u0018\u0002\n\u0000\n\u0002\u0018\u0002\n\u0002\b\b\n\u0002\u0010\u0000\n\u0002\b\u0002\bf\u0018\u0000*\u0004\b\u0000\u0010\u0001*\u0006\b\u0001\u0010\u0002 \u00012\b\u0012\u0004\u0012\u0002H\u00020\u00032\u000e\u0012\u0004\u0012\u0002H\u0001\u0012\u0004\u0012\u0002H\u00020\u0004:\u0001\u0010J\u0015\u0010\u000b\u001a\u00028\u00012\u0006\u0010\f\u001a\u00028\u0000H&¢\u0006\u0002\u0010\rJ\u0017\u0010\u000e\u001a\u0004\u0018\u00010\u000f2\u0006\u0010\f\u001a\u00028\u0000H'¢\u0006\u0002\u0010\rR$\u0010\u0005\u001a\u000e\u0012\u0004\u0012\u00028\u0000\u0012\u0004\u0012\u00028\u00010\u0006X¦\u0004¢\u0006\f\u0012\u0004\b\u0007\u0010\b\u001a\u0004\b\t\u0010\n¨\u0006\u0011"}, d2 = {"Lkotlin/reflect/KProperty1;", "T", com.android.server.integrity.parser.RuleMetadataParser.VERSION_TAG, "Lkotlin/reflect/KProperty;", "Lkotlin/Function1;", "getter", "Lkotlin/reflect/KProperty1$Getter;", "getGetter$annotations", "()V", "getGetter", "()Lkotlin/reflect/KProperty1$Getter;", "get", "receiver", "(Ljava/lang/Object;)Ljava/lang/Object;", "getDelegate", "", "Getter", "kotlin-stdlib"}, k = 1, mv = {1, 9, 0}, xi = 48)
+public interface KProperty1<T, V> extends com.android.server.permission.jarjar.kotlin.reflect.KProperty<V>, com.android.server.permission.jarjar.kotlin.jvm.functions.Function1<T, V> {
+
+    /* JADX INFO: compiled from: KProperty.kt */
+    @com.android.server.permission.jarjar.kotlin.Metadata(k = 3, mv = {1, 9, 0}, xi = 48)
+    public static final class DefaultImpls {
+        public static /* synthetic */ void getGetter$annotations() {
+        }
+    }
+
+    /* JADX INFO: compiled from: KProperty.kt */
+    @com.android.server.permission.jarjar.kotlin.Metadata(d1 = {"\u0000\u0012\n\u0002\u0018\u0002\n\u0002\b\u0002\n\u0002\u0018\u0002\n\u0002\u0018\u0002\n\u0000\bf\u0018\u0000*\u0004\b\u0002\u0010\u0001*\u0006\b\u0003\u0010\u0002 \u00012\b\u0012\u0004\u0012\u0002H\u00020\u00032\u000e\u0012\u0004\u0012\u0002H\u0001\u0012\u0004\u0012\u0002H\u00020\u0004¨\u0006\u0005"}, d2 = {"Lkotlin/reflect/KProperty1$Getter;", "T", com.android.server.integrity.parser.RuleMetadataParser.VERSION_TAG, "Lkotlin/reflect/KProperty$Getter;", "Lkotlin/Function1;", "kotlin-stdlib"}, k = 1, mv = {1, 9, 0}, xi = 48)
+    public interface Getter<T, V> extends com.android.server.permission.jarjar.kotlin.reflect.KProperty.Getter<V>, com.android.server.permission.jarjar.kotlin.jvm.functions.Function1<T, V> {
+    }
+
+    V get(T t);
+
+    java.lang.Object getDelegate(T t);
+
+    @Override // com.android.server.permission.jarjar.kotlin.reflect.KProperty
+    com.android.server.permission.jarjar.kotlin.reflect.KProperty1.Getter<T, V> getGetter();
+}

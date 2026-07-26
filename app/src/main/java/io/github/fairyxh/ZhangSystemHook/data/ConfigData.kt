@@ -24,6 +24,9 @@ object ConfigData {
     private const val BLOCK_APPS = "_block_apps"
     private const val SHOW_NOTICE = "show_notice"
     val ENABLE_MODULE = PrefsData("_enable_module", true)
+    @Deprecated("Use ScreenshotConfig.ENABLE_ANDROID14_BLOCKER")
+    val BLOCK_SCREEN_CAPTURE_DETECTION = PrefsData("block_screen_capture_detection", false)
+    val BLOCK_THIRD_PARTY_COMMUNICATION_MODE = PrefsData("block_third_party_communication_mode", false)
     val blockApps by lazy {
         PrefsDataSetString(BLOCK_APPS, hashSetOf(BuildConfig.APPLICATION_ID))
     }

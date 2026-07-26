@@ -1738,7 +1738,7 @@ object AccessibilityHooker : YukiBaseHooker() {
                             it.packageName.contains(filters.name) || context.appNameOf(it.packageName).contains(filters.name)
                         }
                     }
-                    fun PackageInfo.isSystemApp() = (applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    fun PackageInfo.isSystemApp() = (applicationInfo?.flags ?: 0 and ApplicationInfo.FLAG_SYSTEM) != 0
                     when (filters.type) {
                         AppFiltersType.USER -> info.filter { it.isSystemApp().not() }
                         AppFiltersType.SYSTEM -> info.filter { it.isSystemApp() }

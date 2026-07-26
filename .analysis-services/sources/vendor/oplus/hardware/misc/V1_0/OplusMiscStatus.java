@@ -1,0 +1,31 @@
+package vendor.oplus.hardware.misc.V1_0;
+
+/* JADX INFO: loaded from: classes4.dex */
+public final class OplusMiscStatus {
+    public static final int FAILED = 1;
+    public static final int OK = 0;
+
+    public static final java.lang.String toString(int o) {
+        if (o == 0) {
+            return "OK";
+        }
+        if (o == 1) {
+            return "FAILED";
+        }
+        return "0x" + java.lang.Integer.toHexString(o);
+    }
+
+    public static final java.lang.String dumpBitfield(int o) {
+        java.util.ArrayList<java.lang.String> list = new java.util.ArrayList<>();
+        int flipped = 0;
+        list.add("OK");
+        if ((o & 1) == 1) {
+            list.add("FAILED");
+            flipped = 0 | 1;
+        }
+        if (o != flipped) {
+            list.add("0x" + java.lang.Integer.toHexString((~flipped) & o));
+        }
+        return java.lang.String.join(" | ", list);
+    }
+}

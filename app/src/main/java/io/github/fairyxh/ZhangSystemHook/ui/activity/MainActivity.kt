@@ -6,10 +6,15 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.content.Context
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
+import android.util.Log
+import android.app.Activity
 import android.view.accessibility.AccessibilityManager
 import androidx.core.view.isVisible
 import com.highcapable.yukihookapi.YukiHookAPI
@@ -19,6 +24,7 @@ import io.github.fairyxh.ZhangSystemHook.R
 import io.github.fairyxh.ZhangSystemHook.application.DefaultApplication.Companion.context
 import io.github.fairyxh.ZhangSystemHook.application.SystemNotifier
 import io.github.fairyxh.ZhangSystemHook.data.ConfigData
+import io.github.fairyxh.ZhangSystemHook.data.ScreenshotConfig
 import io.github.fairyxh.ZhangSystemHook.databinding.ActivityMainBinding
 import io.github.fairyxh.ZhangSystemHook.ui.activity.base.BaseActivity
 import io.github.fairyxh.ZhangSystemHook.utils.factory.hideOrShowLauncherIcon
@@ -34,6 +40,27 @@ import java.lang.reflect.Method
 
 
 class MainActivity : BaseActivity<ActivityMainBinding>() {
+
+    private var audioTestInCommunicationMode = false
+    private var screenCaptureCallbackRegistered = false
+    private val testHandler = Handler(Looper.getMainLooper())
+    private val screenCaptureTimeout = Runnable {
+        if (screenCaptureCallbackRegistered) {
+            binding.testResultText.text = getString(R.string.test_screen_capture_timeout)
+            Log.i("ZhangSystemHookTest", "no screen capture callback received within timeout")
+        }
+    }
+    private val screenCaptureCallback by lazy {
+        if (Build.VERSION.SDK_INT >= 34) {
+            object : Activity.ScreenCaptureCallback {
+                override fun onScreenCaptured() {
+                    testHandler.removeCallbacks(screenCaptureTimeout)
+                    binding.testResultText.text = getString(R.string.test_screen_capture_detected)
+                    Log.i("ZhangSystemHookTest", "module app received onScreenCaptured")
+                }
+            }
+        } else null
+    }
 
     companion object {
         private val systemVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) ${Build.DISPLAY}"
@@ -196,9 +223,82 @@ class MainActivity : BaseActivity<ActivityMainBinding>() {
             }
         }
 
+        binding.blockScreenCaptureDetectionSwitch.isChecked = ScreenshotConfig.enableAndroid14Blocker
+        binding.blockScreenCaptureDetectionSwitch.setOnCheckedChangeListener { button, isChecked ->
+            try {
+                ScreenshotConfig.enableAndroid14Blocker = isChecked
+                SystemNotifier.sendUserMsg(
+                    if (isChecked) "已启用 Android 14 截图检测拦截，重启后生效"
+                    else "已关闭 Android 14 截图检测拦截，重启后生效",
+                    button.context
+                )
+            } catch (e: Throwable) {
+                SystemNotifier.sendUserMsg("设置截图检测开关失败", button.context)
+            }
+        }
+
+        binding.enhancedScreenshotBlockerSwitch.isChecked = ScreenshotConfig.enableEnhancedBlocker
+        binding.enhancedScreenshotBlockerSwitch.setOnCheckedChangeListener { button, isChecked ->
+            try {
+                ScreenshotConfig.enableEnhancedBlocker = isChecked
+                SystemNotifier.sendUserMsg(
+                    if (isChecked) "已启用增强截屏防检测，重启后生效"
+                    else "已关闭增强截屏防检测，重启后生效",
+                    button.context
+                )
+            } catch (e: Throwable) {
+                SystemNotifier.sendUserMsg("设置增强截屏防检测开关失败", button.context)
+            }
+        }
+
+        binding.blockCommunicationModeSwitch.isChecked =
+            ConfigData.getBoolean(ConfigData.BLOCK_THIRD_PARTY_COMMUNICATION_MODE)
+        binding.blockCommunicationModeSwitch.setOnCheckedChangeListener { button, isChecked ->
+            try {
+                ConfigData.putBoolean(ConfigData.BLOCK_THIRD_PARTY_COMMUNICATION_MODE, isChecked)
+                SystemNotifier.sendUserMsg(
+                    if (isChecked) "已禁止普通应用切换通话模式，重启后生效"
+                    else "已恢复普通应用切换通话模式，重启后生效",
+                    button.context
+                )
+            } catch (e: Throwable) {
+                SystemNotifier.sendUserMsg("设置通话模式开关失败", button.context)
+            }
+        }
+
         // 测试通知按钮
         binding.buttonNoticeTest.setOnClickListener {
             SystemNotifier.sendUserMsg("ZhangSystemHook", it.context)
+        }
+
+        binding.buttonCommunicationModeTest.setOnClickListener {
+            runCatching {
+                val audioManager = getSystemService(AudioManager::class.java)
+                audioTestInCommunicationMode = !audioTestInCommunicationMode
+                audioManager.mode = if (audioTestInCommunicationMode) AudioManager.MODE_IN_COMMUNICATION else AudioManager.MODE_NORMAL
+                binding.testResultText.text = getString(if (audioTestInCommunicationMode) R.string.test_communication_entered else R.string.test_communication_released)
+                Log.i("ZhangSystemHookTest", "module app requested mode=${audioManager.mode}")
+            }.onFailure {
+                binding.testResultText.text = getString(R.string.test_failed, it.javaClass.simpleName)
+                Log.e("ZhangSystemHookTest", "module app setMode failed", it)
+            }
+        }
+
+        binding.buttonScreenCaptureTest.setOnClickListener {
+            if (Build.VERSION.SDK_INT < 34) {
+                binding.testResultText.text = getString(R.string.test_screen_capture_unsupported)
+                return@setOnClickListener
+            }
+            if (screenCaptureCallbackRegistered) {
+                unregisterScreenCaptureCallback(screenCaptureCallback!!)
+                screenCaptureCallbackRegistered = false
+            }
+            registerScreenCaptureCallback(mainExecutor, screenCaptureCallback!!)
+            screenCaptureCallbackRegistered = true
+            binding.testResultText.text = getString(R.string.test_screen_capture_armed)
+            testHandler.removeCallbacks(screenCaptureTimeout)
+            testHandler.postDelayed(screenCaptureTimeout, 10000L)
+            Log.i("ZhangSystemHookTest", "module app registered screen capture callback")
         }
     }
 

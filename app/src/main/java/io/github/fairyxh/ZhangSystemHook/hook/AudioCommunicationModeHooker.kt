@@ -36,11 +36,15 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         }
         hookMethods(audioService, "setMode")
         hookModeCommit(audioService)
+        hookOriginalMode(audioService)
         hookCommunicationDevice(audioService)
+        hookPreferredDeviceForStrategy(audioService)
+        hookSpeakerphone(audioService)
         hookMethods(audioService, "startBluetoothSco")
         hookMethods(audioService, "startBluetoothScoVirtualCall")
         hookMethods(audioService, "stopBluetoothSco")
         hookVolumeSelection(audioService)
+        hookPhoneState()
         hookEarpieceDisable()
         HookLog.i(TAG, "[Audio] AudioService hook scan completed")
     }
@@ -159,14 +163,190 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION ||
             mode == AudioManager.MODE_CALL_SCREENING
 
+    /** ColorOS 中间层 setOriginalMode 的 mode 参数同样改写（覆盖游戏模式消息 114 等直达路径）。 */
+    private fun hookOriginalMode(clazz: Class<*>) {
+        val candidates = runCatching {
+            allMethods(clazz).filter { it.name == "setOriginalMode" }.distinctBy(Method::toGenericString)
+        }.getOrElse {
+            HookLog.e(TAG, "[OriginalMode] candidate discovery failed", it)
+            return
+        }
+        if (candidates.isEmpty()) {
+            HookLog.w(TAG, "[OriginalMode] candidate not found: setOriginalMode")
+            return
+        }
+        candidates.forEach { method ->
+            runCatching {
+                method.isAccessible = true
+                method.hook {
+                    before {
+                        val modeIndex = firstIntParameterIndex(method)
+                        val requested = if (modeIndex >= 0) args.getOrNull(modeIndex) as? Int else null
+                        if (requested != null && isCallMode(requested) && communicationModeBlocked()) {
+                            args[modeIndex] = AudioManager.MODE_NORMAL
+                            HookLog.i(
+                                "AudioMode",
+                                "[OriginalMode] FORCE_MODE_NORMAL ${method.name}${method.parameterTypes.contentToString()} " +
+                                    "requested=$requested"
+                            )
+                        }
+                    }
+                }
+                HookLog.i(TAG, "[OriginalMode] installed ${method.name}${method.parameterTypes.contentToString()}")
+            }.onFailure {
+                HookLog.e(TAG, "[OriginalMode] hook failed: ${method.toGenericString()}", it)
+            }
+        }
+    }
+
+    /** 应用可通过 setPreferredDeviceForStrategy 把通信策略设备指到听筒，改写为扬声器。 */
+    private fun hookPreferredDeviceForStrategy(clazz: Class<*>) {
+        val attributesClass = runCatching {
+            "android.media.AudioDeviceAttributes".toClass()
+        }.getOrElse {
+            HookLog.w(TAG, "[Strategy] AudioDeviceAttributes class unavailable; skip")
+            return
+        }
+        val candidates = runCatching {
+            allMethods(clazz)
+                .filter { method ->
+                    method.name == "setPreferredDeviceForStrategy" && method.parameterTypes.isNotEmpty() &&
+                        method.parameterTypes.last() == attributesClass
+                }
+                .distinctBy(Method::toGenericString)
+        }.getOrElse {
+            HookLog.e(TAG, "[Strategy] candidate discovery failed", it)
+            return
+        }
+        if (candidates.isEmpty()) {
+            HookLog.w(TAG, "[Strategy] candidate not found: setPreferredDeviceForStrategy")
+            return
+        }
+        candidates.forEach { method ->
+            runCatching {
+                method.isAccessible = true
+                method.hook {
+                    before {
+                        if (communicationModeBlocked()) {
+                            val device = args.lastOrNull()
+                            val deviceType = device?.let { invokeInt(it, "getType") }
+                            if (deviceType == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+                                val speakerAttrs = runCatching {
+                                    attributesClass
+                                        .getConstructor(Int::class.javaPrimitiveType, String::class.java)
+                                        .newInstance(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, "")
+                                }.getOrNull()
+                                if (speakerAttrs != null) {
+                                    args[args.size - 1] = speakerAttrs
+                                    HookLog.i(
+                                        TAG,
+                                        "[Strategy] REWRITE_EARPIECE_TO_SPEAKER ${method.name}${method.parameterTypes.contentToString()} " +
+                                            "args=${args.contentToString()}"
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                HookLog.i(TAG, "[Strategy] installed ${method.name}${method.parameterTypes.contentToString()}")
+            }.onFailure {
+                HookLog.e(TAG, "[Strategy] hook failed: ${method.toGenericString()}", it)
+            }
+        }
+    }
+
+    /** setSpeakerphoneOn(false) 强制改写为 true，防止应用/系统把外放切回听筒。 */
+    private fun hookSpeakerphone(clazz: Class<*>) {
+        val candidates = runCatching {
+            allMethods(clazz)
+                .filter {
+                    it.name == "setSpeakerphoneOn" && it.parameterTypes.size >= 2 &&
+                        it.parameterTypes[0] == IBinder::class.java && it.parameterTypes[1] == Boolean::class.javaPrimitiveType
+                }
+                .distinctBy(Method::toGenericString)
+        }.getOrElse {
+            HookLog.e(TAG, "[Speaker] candidate discovery failed", it)
+            return
+        }
+        if (candidates.isEmpty()) {
+            HookLog.w(TAG, "[Speaker] candidate not found: setSpeakerphoneOn")
+            return
+        }
+        candidates.forEach { method ->
+            runCatching {
+                method.isAccessible = true
+                method.hook {
+                    before {
+                        if (communicationModeBlocked() && args.getOrNull(1) == false) {
+                            args[1] = true
+                            HookLog.i(
+                                TAG,
+                                "[Speaker] FORCE_SPEAKER_ON ${method.name}${method.parameterTypes.contentToString()} " +
+                                    "args=${args.contentToString()}"
+                            )
+                        }
+                    }
+                }
+                HookLog.i(TAG, "[Speaker] installed ${method.name}${method.parameterTypes.contentToString()}")
+            }.onFailure {
+                HookLog.e(TAG, "[Speaker] hook failed: ${method.toGenericString()}", it)
+            }
+        }
+    }
+
+    /** AudioSystem.setPhoneState 是 HAL 侧切换通话模式的最终点，作为兜底：返回失败阻止切换。 */
+    private fun hookPhoneState() {
+        val audioSystem = runCatching {
+            "android.media.AudioSystem".toClass()
+        }.getOrElse {
+            HookLog.e(TAG, "[PhoneState] AudioSystem class unavailable", it)
+            return
+        }
+        audioSystemClass = audioSystem
+        val candidates = runCatching {
+            allMethods(audioSystem).filter { it.name == "setPhoneState" }.distinctBy(Method::toGenericString)
+        }.getOrElse {
+            HookLog.e(TAG, "[PhoneState] candidate discovery failed", it)
+            return
+        }
+        if (candidates.isEmpty()) {
+            HookLog.w(TAG, "[PhoneState] candidate not found: AudioSystem.setPhoneState")
+            return
+        }
+        candidates.forEach { method ->
+            runCatching {
+                method.isAccessible = true
+                method.hook {
+                    before {
+                        if (communicationModeBlocked()) {
+                            val state = firstInt(args)
+                            if (state != null && isCallMode(state)) {
+                                result = -1
+                                HookLog.i(
+                                    TAG,
+                                    "[PhoneState] BLOCK_HAL_CALL_MODE ${method.name}${method.parameterTypes.contentToString()} " +
+                                        "args=${args.contentToString()}"
+                                )
+                            }
+                        }
+                    }
+                }
+                HookLog.i(TAG, "[PhoneState] installed ${method.name}${method.parameterTypes.contentToString()}")
+            }.onFailure {
+                HookLog.e(TAG, "[PhoneState] hook failed: ${method.toGenericString()}", it)
+            }
+        }
+    }
+
     private fun hookCommunicationDevice(clazz: Class<*>) {
         val candidates = runCatching {
             allMethods(clazz)
                 .filter { method ->
-                    method.name == "setCommunicationDevice" &&
+                    method.name.startsWith("setCommunicationDevice") &&
                         method.parameterTypes.size == 2 &&
                         IBinder::class.java.isAssignableFrom(method.parameterTypes[0]) &&
-                        method.parameterTypes[1] == Int::class.javaPrimitiveType
+                        (method.parameterTypes[1] == Int::class.javaPrimitiveType ||
+                            method.parameterTypes[1] == AudioDeviceInfo::class.java)
                 }
                 .distinctBy(Method::toGenericString)
         }.getOrElse {
@@ -185,7 +365,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
-                        rewriteCommunicationDevice(instance, args)
+                        rewriteCommunicationDevice(instance, method, args)
                     }
                 }
                 HookLog.i(
@@ -198,7 +378,15 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         }
     }
 
-    private fun rewriteCommunicationDevice(audioService: Any?, args: Array<Any?>) {
+    private fun rewriteCommunicationDevice(audioService: Any?, method: Method, args: Array<Any?>) {
+        if (method.parameterTypes.size >= 2 && method.parameterTypes[1] == AudioDeviceInfo::class.java) {
+            rewriteCommunicationDeviceInfo(audioService, args)
+            return
+        }
+        rewriteCommunicationDeviceId(audioService, args)
+    }
+
+    private fun rewriteCommunicationDeviceId(audioService: Any?, args: Array<Any?>) {
         val uid = Binder.getCallingUid()
         val context = findContext(audioService)
         val packageName = resolvePackageName(context, uid)
@@ -290,6 +478,49 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         }
     }
 
+    /** 参数形状为 (IBinder, AudioDeviceInfo) 的 OEM 变体（如 ColorOS 扩展），同样强制扬声器。 */
+    private fun rewriteCommunicationDeviceInfo(audioService: Any?, args: Array<Any?>) {
+        val uid = Binder.getCallingUid()
+        val context = findContext(audioService)
+        val packageName = resolvePackageName(context, uid)
+        val enabled = communicationModeBlocked()
+        val requested = args.getOrNull(1) as? AudioDeviceInfo
+        if (requested == null) {
+            HookLog.w(
+                TAG,
+                "[CommunicationDevice] ALLOW invalid AudioDeviceInfo uid=$uid pkg=$packageName args=${args.contentToString()}"
+            )
+            return
+        }
+        if (!enabled || requested.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+            HookLog.i(
+                TAG,
+                "[CommunicationDevice] ALLOW uid=$uid pkg=$packageName requestedType=${requested.type} enabled=$enabled"
+            )
+            return
+        }
+        runCatching {
+            val audioManager = context?.getSystemService(AudioManager::class.java)
+            val speaker = audioManager?.availableCommunicationDevices
+                ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            if (speaker == null) {
+                HookLog.w(
+                    TAG,
+                    "[CommunicationDevice] ALLOW speaker unavailable uid=$uid pkg=$packageName requestedType=${requested.type}"
+                )
+                return
+            }
+            args[1] = speaker
+            HookLog.i(
+                TAG,
+                "[CommunicationDevice] REWRITE_TO_SPEAKER(INFO) uid=$uid pkg=$packageName " +
+                    "requestedType=${requested.type} speakerId=${speaker.id} speakerType=${speaker.type}"
+            )
+        }.onFailure {
+            HookLog.e(TAG, "[CommunicationDevice] ALLOW route inspection failed (info) uid=$uid pkg=$packageName", it)
+        }
+    }
+
     private fun hookVolumeSelection(clazz: Class<*>) {
         runCatching {
             val candidates = allMethods(clazz)
@@ -347,6 +578,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
      * AudioSystem 隐藏常量：听筒输出设备 / 设备状态。
      */
     private const val DEVICE_OUT_EARPIECE = 0x00000001
+    private const val DEVICE_OUT_SPEAKER = 0x00000004
     private const val DEVICE_STATE_UNAVAILABLE = 0
     private const val DEVICE_STATE_AVAILABLE = 1
     private const val EARPIECE_DISCONNECT_DELAY_MS = 5000L
@@ -426,6 +658,41 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                                     TAG,
                                     "[Earpiece] REPORT_UNAVAILABLE ${method.name}${method.parameterTypes.contentToString()} " +
                                         "args=${args.contentToString()}"
+                                )
+                            }
+                        }
+                    }
+                }
+                HookLog.i(TAG, "[Earpiece] installed ${method.name}${method.parameterTypes.contentToString()}")
+            }.onFailure {
+                HookLog.e(TAG, "[Earpiece] hook failed: ${method.toGenericString()}", it)
+            }
+        }
+        val deviceGetters = runCatching {
+            allMethods(audioSystem)
+                .filter { it.name == "getDevicesForAttributes" || it.name == "getOutputDevices" }
+                .distinctBy(Method::toGenericString)
+        }.getOrElse {
+            HookLog.e(TAG, "[Earpiece] getDevicesForAttributes discovery failed", it)
+            emptyList()
+        }
+        if (deviceGetters.isEmpty()) {
+            HookLog.w(TAG, "[Earpiece] candidate not found: AudioSystem.getDevicesForAttributes/getOutputDevices")
+        }
+        deviceGetters.forEach { method ->
+            runCatching {
+                method.isAccessible = true
+                method.hook {
+                    after {
+                        if (communicationModeBlocked()) {
+                            val devices = result as? Int
+                            if (devices != null && devices and DEVICE_OUT_EARPIECE != 0) {
+                                val filtered = (devices and DEVICE_OUT_EARPIECE.inv()) or DEVICE_OUT_SPEAKER
+                                result = filtered
+                                HookLog.i(
+                                    TAG,
+                                    "[Earpiece] FILTER_DEVICE_MASK ${method.name}${method.parameterTypes.contentToString()} " +
+                                        "devices=$devices filtered=$filtered"
                                 )
                             }
                         }

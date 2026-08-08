@@ -72,7 +72,7 @@
     <string name="enhanced_screenshot_blocker">Enhanced screenshot detection blocking</string>
     <string name="enhanced_screenshot_blocker_tip">Filters screenshot records and ContentObserver notifications from MediaStore without blocking normal image reads.</string>
     <string name="block_communication_mode">Block apps from switching to call mode</string>
-    <string name="block_communication_mode_tip">Prevents ordinary third-party apps from selecting communication audio routes or Bluetooth SCO. Privileged system calling services remain allowed.</string>
+    <string name="block_communication_mode_tip">When enabled, prevents apps (including VoIP calls requested through system call services) from switching to call/communication mode. Real cellular calls are unaffected.</string>
     <string name="test_communication_button">Test: module app call mode</string>
     <string name="test_screen_capture_button">Test: module app screenshot detection</string>
     <string name="test_communication_entered">Module app requested call mode; press again to restore</string>
@@ -81,5 +81,6 @@
     <string name="test_screen_capture_detected">Module app received screenshot callback; blocking failed</string>
     <string name="test_screen_capture_timeout">No screenshot callback for 10 seconds; check LSPosed logs to confirm blocking</string>
     <string name="test_screen_capture_unsupported">Screenshot callback test is unavailable</string>
+    <string name="test_screen_capture_stopped">Screenshot callback is not currently registered</string>
     <string name="test_failed">Test failed: %1$s</string>
 </resources>

@@ -73,7 +73,7 @@
     <string name="enhanced_screenshot_blocker">增强截屏防检测</string>
     <string name="enhanced_screenshot_blocker_tip">过滤 MediaStore 截图记录和 ContentObserver 通知；普通图片读取不受影响。</string>
     <string name="block_communication_mode">禁止App切换通话模式</string>
-    <string name="block_communication_mode_tip">防止普通第三方应用切换通信音频路由或蓝牙SCO，具有系统通话权限的服务不受影响。</string>
+    <string name="block_communication_mode_tip">开启后阻止应用（包括经系统通话服务代申请的通话/语音）切换到通话或通信模式；真实蜂窝通话进行中不受影响。</string>
     <string name="test_communication_button">测试：模块App切换通话模式</string>
     <string name="test_screen_capture_button">测试：模块App检测截屏</string>
     <string name="test_communication_entered">模块App已请求通话模式，再按一次恢复</string>
@@ -82,5 +82,6 @@
     <string name="test_screen_capture_detected">模块App收到截屏回调，拦截未生效</string>
     <string name="test_screen_capture_timeout">10秒内未收到截屏回调，结合LSPosed日志判断是否拦截成功</string>
     <string name="test_screen_capture_unsupported">当前系统不支持截屏回调测试</string>
+    <string name="test_screen_capture_stopped">截屏检测回调当前未注册</string>
     <string name="test_failed">测试失败：%1$s</string>
 </resources>

@@ -73,7 +73,7 @@
     <string name="enhanced_screenshot_blocker">增强截屏防检测</string>
     <string name="enhanced_screenshot_blocker_tip">过滤 MediaStore 截图记录和 ContentObserver 通知；普通图片读取不受影响。</string>
     <string name="block_communication_mode">禁止App切换通话模式</string>
-    <string name="block_communication_mode_tip">开启后阻止应用（包括经系统通话服务代申请的通话/语音）切换到通话或通信模式；真实蜂窝通话进行中不受影响。</string>
+    <string name="block_communication_mode_tip">开启后所有应用一律禁止进入通话/通信模式、禁止使用听筒；通信音频强制输出到扬声器并按媒体音量播放，音量键仍可正常调节。</string>
     <string name="test_communication_button">测试：模块App切换通话模式</string>
     <string name="test_screen_capture_button">测试：模块App检测截屏</string>
     <string name="test_communication_entered">模块App已请求通话模式，再按一次恢复</string>

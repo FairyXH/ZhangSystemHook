@@ -17,7 +17,7 @@ import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
-/** 仅在 system_server 的 AudioService Binder 实现中限制普通应用获取通信模式/路由。 */
+/** 在 system_server 的 AudioService 中：开关开启时禁止所有应用进入通话/通信模式、使用听筒，音频强制到扬声器/媒体音量。 */
 object AudioCommunicationModeHooker : YukiBaseHooker() {
     private const val TAG = "AudioBlocker"
     private const val FORCE_NORMAL_DELAY_MS = 600L
@@ -110,16 +110,12 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                         val modeIndex = firstIntParameterIndex(method)
                         val requested = if (modeIndex >= 0) args.getOrNull(modeIndex) as? Int else null
                         if (requested != null && isCallMode(requested) && communicationModeBlocked()) {
-                            val context = findContext(instance)
-                            val callState = readCallState(context)
-                            if (callState == null || callState == TelephonyManager.CALL_STATE_IDLE) {
-                                args[modeIndex] = AudioManager.MODE_NORMAL
-                                HookLog.i(
-                                    "AudioMode",
-                                    "[ModeCommit] FORCE_MODE_NORMAL ${method.name}${method.parameterTypes.contentToString()} " +
-                                        "requested=$requested callState=$callState"
-                                )
-                            }
+                            args[modeIndex] = AudioManager.MODE_NORMAL
+                            HookLog.i(
+                                "AudioMode",
+                                "[ModeCommit] FORCE_MODE_NORMAL ${method.name}${method.parameterTypes.contentToString()} " +
+                                    "requested=$requested"
+                            )
                         }
                     }
                     after {
@@ -133,15 +129,13 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         }
     }
 
-    /** 兜底：mMode 已进入通话/通信模式且无真实蜂窝通话时，强行切回 MODE_NORMAL。 */
+    /** 兜底：mMode 已进入通话/通信模式时，强行切回 MODE_NORMAL（不分调用方）。 */
     private fun forceNormalIfNeeded(audioService: Any?, context: Context?) {
         if (!communicationModeBlocked()) return
-        val callState = readCallState(context)
-        if (callState != null && callState != TelephonyManager.CALL_STATE_IDLE) return
         val mode = readMode(audioService) ?: return
         if (!isCallMode(mode)) return
         if (!forceNormalPending.compareAndSet(false, true)) return
-        HookLog.i(TAG, "[ForceNormal] mode=$mode callState=$callState scheduling setMode(MODE_NORMAL)")
+        HookLog.i(TAG, "[ForceNormal] mode=$mode callState=${readCallState(context)} scheduling setMode(MODE_NORMAL)")
         correctionHandler.postDelayed({
             forceNormalPending.set(false)
             runCatching {
@@ -209,7 +203,6 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         val packageName = resolvePackageName(context, uid)
         val privileged = context?.let { hasRoutingPrivilege(it) } ?: true
         val systemApp = isSystemApplication(context, uid)
-        val nonSystemApp = uid >= Process.FIRST_APPLICATION_UID && !privileged && !systemApp
         val enabled = runCatching {
             ConfigData.getBoolean(ConfigData.BLOCK_THIRD_PARTY_COMMUNICATION_MODE)
         }.onFailure {
@@ -253,20 +246,11 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                     "resolvedDeviceId=${resolvedDevice?.id} resolvedType=${resolvedDevice?.type} " +
                     "address=${resolvedDevice?.address} isSource=${resolvedDevice?.isSource}"
             )
-            if (resolvedDevice == null) {
-                HookLog.w(
-                    TAG,
-                    "[CommunicationDevice] ALLOW device unresolved uid=$uid pkg=$packageName " +
-                        "requestedDeviceId=$requestedDeviceId resolvedType=null selectedSpeakerId=null " +
-                        "enabled=$enabled nonSystemApp=$nonSystemApp"
-                )
-                return
-            }
-            if (!enabled || !nonSystemApp || resolvedDevice.type != AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+            if (!enabled) {
                 HookLog.i(
                     TAG,
-                    "[CommunicationDevice] ALLOW uid=$uid pkg=$packageName " +
-                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice.type} selectedSpeakerId=null"
+                    "[CommunicationDevice] ALLOW switch off uid=$uid pkg=$packageName " +
+                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type}"
                 )
                 return
             }
@@ -275,16 +259,24 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 HookLog.w(
                     TAG,
                     "[CommunicationDevice] ALLOW speaker unavailable uid=$uid pkg=$packageName " +
-                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice.type} selectedSpeakerId=null"
+                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type}"
+                )
+                return
+            }
+            if (requestedDeviceId != 0 && resolvedDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                HookLog.i(
+                    TAG,
+                    "[CommunicationDevice] ALLOW already speaker uid=$uid pkg=$packageName " +
+                        "requestedDeviceId=$requestedDeviceId speakerId=${speaker.id}"
                 )
                 return
             }
             args[1] = speaker.id
             HookLog.i(
                 TAG,
-                "[CommunicationDevice] REWRITE_EARPIECE_TO_SPEAKER uid=$uid pkg=$packageName " +
-                    "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice.type} " +
-                    "selectedSpeakerId=${speaker.id} speakerType=${speaker.type} " +
+                "[CommunicationDevice] REWRITE_TO_SPEAKER uid=$uid pkg=$packageName " +
+                    "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type} " +
+                    "speakerId=${speaker.id} speakerType=${speaker.type} " +
                     "speakerAddress=${speaker.address} speakerIsSource=${speaker.isSource}"
             )
         }.onFailure {
@@ -300,49 +292,54 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
     private fun hookVolumeSelection(clazz: Class<*>) {
         runCatching {
             val candidates = allMethods(clazz)
-                .filter { it.name == "adjustSuggestedStreamVolume" }
+                .filter { it.name.startsWith("adjustStreamVolume") || it.name.startsWith("adjustSuggestedStreamVolume") }
                 .distinctBy(Method::toGenericString)
             if (candidates.isEmpty()) {
-                HookLog.w(TAG, "[Audio] candidate not found: ${clazz.name}.adjustSuggestedStreamVolume")
+                HookLog.w(TAG, "[Audio] candidate not found: adjustStreamVolume/adjustSuggestedStreamVolume")
                 return
             }
             candidates.forEach { method: Method ->
-                    method.isAccessible = true
-                    method.hook {
-                        before {
+                method.isAccessible = true
+                method.hook {
+                    before {
+                        val enabled = communicationModeBlocked()
+                        val streamIndex = volumeStreamParameterIndex(method)
+                        if (streamIndex != null) {
                             val uid = Binder.getCallingUid()
                             val context = findContext(instance)
                             val packageName = resolvePackageName(context, uid)
                             val mode = readMode(instance)
-                            val suggestedStreamIndex = suggestedStreamIndex(method)
-                            val suggestedStream = suggestedStreamIndex?.let { args.getOrNull(it) as? Int }
+                            val requestedStream = args.getOrNull(streamIndex) as? Int
                             val activeStream = invokeInt(
                                 instance,
                                 "getActiveStreamType",
                                 AudioManager.USE_DEFAULT_STREAM_TYPE
                             )
-                            val enabled = runCatching {
-                                ConfigData.getBoolean(ConfigData.BLOCK_THIRD_PARTY_COMMUNICATION_MODE)
-                            }.getOrDefault(false)
                             val communicationMode = mode != null && isCallMode(mode)
-                            val voiceCallSelected = activeStream == AudioManager.STREAM_VOICE_CALL
-                            val shouldRewrite = enabled && (communicationMode || voiceCallSelected) &&
-                                suggestedStreamIndex != null
+                            val voiceCallSelected = requestedStream == AudioManager.STREAM_VOICE_CALL ||
+                                activeStream == AudioManager.STREAM_VOICE_CALL
+                            val shouldRewrite = enabled && (communicationMode || voiceCallSelected)
                             HookLog.i(
                                 "AudioMode",
-                                "adjustSuggestedStreamVolume args=${args.contentToString()} uid=$uid " +
-                                    "pkg=$packageName mode=$mode requestedStream=$suggestedStream " +
-                                    "streamArg=$suggestedStreamIndex activeStream=$activeStream " +
+                                "${method.name} args=${args.contentToString()} uid=$uid " +
+                                    "pkg=$packageName mode=$mode requestedStream=$requestedStream " +
+                                    "streamArg=$streamIndex activeStream=$activeStream " +
                                     "decision=${if (shouldRewrite) "REWRITE_TO_MUSIC" else "ALLOW"}"
                             )
-                            if (shouldRewrite && suggestedStream != AudioManager.STREAM_MUSIC) {
-                                args[suggestedStreamIndex] = AudioManager.STREAM_MUSIC
+                            if (shouldRewrite && requestedStream != AudioManager.STREAM_MUSIC) {
+                                args[streamIndex] = AudioManager.STREAM_MUSIC
                             }
+                        } else {
+                            HookLog.w(
+                                "AudioMode",
+                                "${method.name}${method.parameterTypes.contentToString()} unknown stream slot; ALLOW"
+                            )
                         }
                     }
-                    HookLog.i(TAG, "[Audio] installed adjustSuggestedStreamVolume${method.parameterTypes.contentToString()}")
                 }
-        }.onFailure { HookLog.e(TAG, "[Audio] failed to hook adjustSuggestedStreamVolume", it) }
+                HookLog.i(TAG, "[Audio] installed ${method.name}${method.parameterTypes.contentToString()}")
+            }
+        }.onFailure { HookLog.e(TAG, "[Audio] failed to hook adjustStreamVolume family", it) }
     }
 
     private fun allMethods(clazz: Class<*>): List<Method> = buildList {
@@ -357,13 +354,15 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         it == Int::class.javaPrimitiveType || it == Int::class.javaObjectType
     }
 
-    private fun suggestedStreamIndex(method: Method): Int? {
+    private fun volumeStreamParameterIndex(method: Method): Int? {
         val parameterTypes = method.parameterTypes
         val intType = Int::class.javaPrimitiveType
-        return if (parameterTypes.size >= 2 && parameterTypes[0] == intType && parameterTypes[1] == intType) {
-            1
-        } else {
-            null
+        return when {
+            method.name.startsWith("adjustSuggestedStreamVolume") ->
+                if (parameterTypes.size >= 2 && parameterTypes[0] == intType && parameterTypes[1] == intType) 1 else null
+            method.name.startsWith("adjustStreamVolume") ->
+                if (parameterTypes.isNotEmpty() && parameterTypes[0] == intType) 0 else null
+            else -> null
         }
     }
 
@@ -377,33 +376,16 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         val systemApp = isSystemApplication(context, uid)
         val packageName = resolvePackageName(context, uid)
         val acquisition = when (methodName) {
-            "setMode" -> firstInt(args) == AudioManager.MODE_IN_CALL ||
-                firstInt(args) == AudioManager.MODE_IN_COMMUNICATION
+            "setMode" -> firstInt(args)?.let { isCallMode(it) } ?: false
             "startBluetoothSco", "startBluetoothScoVirtualCall" -> true
             "stopBluetoothSco" -> false
             else -> false
         }
-        val block = enabled && acquisition && when (methodName) {
-            "setMode" -> shouldBlockCallMode(context, uid, privileged, systemApp)
-            else -> uid >= Process.FIRST_APPLICATION_UID && !privileged && !systemApp
-        }
+        val block = enabled && acquisition
         return Decision(uid, packageName, enabled, privileged, block, describeState(audioService, context))
     }
 
     private fun firstInt(args: Array<Any?>): Int? = args.firstOrNull { it is Int } as? Int
-
-    /**
-     * 新策略：开关开启时，除真实蜂窝通话进行中以外，一律禁止进入通话/通信模式。
-     * 这样可拦截经 Telecom(uid 1001)/系统应用/特权应用代申请的第三方 VoIP 通话模式；
-     * Telephony 状态不可读时退回旧规则（仅拦截普通第三方），避免误伤真实通话。
-     */
-    private fun shouldBlockCallMode(context: Context?, uid: Int, privileged: Boolean, systemApp: Boolean): Boolean {
-        val callState = readCallState(context)
-        if (callState == null) {
-            return uid >= Process.FIRST_APPLICATION_UID && !privileged && !systemApp
-        }
-        return callState == TelephonyManager.CALL_STATE_IDLE
-    }
 
     private fun communicationModeBlocked(): Boolean = runCatching {
         ConfigData.getBoolean(ConfigData.BLOCK_THIRD_PARTY_COMMUNICATION_MODE)

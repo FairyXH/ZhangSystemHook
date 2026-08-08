@@ -10,8 +10,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
-import android.os.Handler
-import android.os.Looper
+
 import android.provider.Settings
 import android.util.Log
 import android.app.Activity
@@ -43,23 +42,9 @@ class MainActivity : BaseActivity<ActivityMainBinding>() {
 
     private var audioTestInCommunicationMode = false
     private var screenCaptureCallbackRegistered = false
-    private val testHandler = Handler(Looper.getMainLooper())
-    private val screenCaptureTimeout = Runnable {
-        if (screenCaptureCallbackRegistered) {
-            binding.testResultText.text = getString(R.string.test_screen_capture_timeout)
-            Log.i("ZhangSystemHookTest", "no screen capture callback received within timeout")
-        }
-    }
-    private val screenCaptureCallback by lazy {
-        if (Build.VERSION.SDK_INT >= 34) {
-            object : Activity.ScreenCaptureCallback {
-                override fun onScreenCaptured() {
-                    testHandler.removeCallbacks(screenCaptureTimeout)
-                    binding.testResultText.text = getString(R.string.test_screen_capture_detected)
-                    Log.i("ZhangSystemHookTest", "module app received onScreenCaptured")
-                }
-            }
-        } else null
+    private val screenCaptureCallback = Activity.ScreenCaptureCallback {
+        binding.testResultText.text = getString(R.string.test_screen_capture_detected)
+        Log.i("ScreenshotBlocker", "[App] ScreenCaptureCallback received: onScreenCaptured")
     }
 
     companion object {
@@ -285,21 +270,41 @@ class MainActivity : BaseActivity<ActivityMainBinding>() {
         }
 
         binding.buttonScreenCaptureTest.setOnClickListener {
-            if (Build.VERSION.SDK_INT < 34) {
-                binding.testResultText.text = getString(R.string.test_screen_capture_unsupported)
-                return@setOnClickListener
-            }
-            if (screenCaptureCallbackRegistered) {
-                unregisterScreenCaptureCallback(screenCaptureCallback!!)
-                screenCaptureCallbackRegistered = false
-            }
-            registerScreenCaptureCallback(mainExecutor, screenCaptureCallback!!)
+            binding.testResultText.text = getString(
+                if (screenCaptureCallbackRegistered) {
+                    R.string.test_screen_capture_armed
+                } else {
+                    R.string.test_screen_capture_stopped
+                }
+            )
+            Log.i("ScreenshotBlocker", "[App] ScreenCaptureCallback status=$screenCaptureCallbackRegistered")
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        runCatching {
+            registerScreenCaptureCallback(mainExecutor, screenCaptureCallback)
             screenCaptureCallbackRegistered = true
             binding.testResultText.text = getString(R.string.test_screen_capture_armed)
-            testHandler.removeCallbacks(screenCaptureTimeout)
-            testHandler.postDelayed(screenCaptureTimeout, 10000L)
-            Log.i("ZhangSystemHookTest", "module app registered screen capture callback")
+            Log.i("ScreenshotBlocker", "[App] ScreenCaptureCallback registered in onStart")
+        }.onFailure {
+            screenCaptureCallbackRegistered = false
+            Log.e("ScreenshotBlocker", "[App] ScreenCaptureCallback registration failed", it)
         }
+    }
+
+    override fun onStop() {
+        if (screenCaptureCallbackRegistered) {
+            runCatching {
+                unregisterScreenCaptureCallback(screenCaptureCallback)
+                Log.i("ScreenshotBlocker", "[App] ScreenCaptureCallback unregistered in onStop")
+            }.onFailure {
+                Log.e("ScreenshotBlocker", "[App] ScreenCaptureCallback unregister failed", it)
+            }
+            screenCaptureCallbackRegistered = false
+        }
+        super.onStop()
     }
 
     private fun refreshModuleStatus() {

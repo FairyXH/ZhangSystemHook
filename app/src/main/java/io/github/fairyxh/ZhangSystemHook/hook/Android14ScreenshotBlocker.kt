@@ -6,19 +6,19 @@ import io.github.fairyxh.ZhangSystemHook.data.ScreenshotConfig
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
-/** Suppresses Android 14 ScreenCaptureCallback dispatch in system_server. */
+/** Suppresses Android 15+ ScreenCaptureCallback dispatch in system_server. */
 object Android14ScreenshotBlocker : YukiBaseHooker() {
     private const val TAG = "ScreenshotBlocker"
 
     override fun onHook() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            HookLog.i(TAG, "[Android14] skipped: SDK=${Build.VERSION.SDK_INT}")
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            HookLog.i(TAG, "[Android15] skipped: Android 15+ required, SDK=${Build.VERSION.SDK_INT}")
             return
         }
-        if (!ScreenshotConfig.enableAndroid14Blocker) {
-            HookLog.i(TAG, "[Android14] disabled")
-            return
-        }
+        HookLog.i(
+            TAG,
+            "[Android15] installing; enabled=${readEnabled()} SDK=${Build.VERSION.SDK_INT}"
+        )
         hookScreenCaptureCallback()
     }
 
@@ -26,14 +26,14 @@ object Android14ScreenshotBlocker : YukiBaseHooker() {
         val activityRecord = runCatching {
             "com.android.server.wm.ActivityRecord".toClass()
         }.getOrElse {
-            HookLog.e(TAG, "[Android14] ActivityRecord unavailable", it)
+            HookLog.e(TAG, "[Android15] ActivityRecord unavailable", it)
             return
         }
         val candidates = allMethods(activityRecord)
             .filter { it.name == "onScreenCaptured" || it.name == "reportScreenCaptured" }
             .distinctBy(Method::toGenericString)
         if (candidates.isEmpty()) {
-            HookLog.w(TAG, "[Android14] ScreenCaptureCallback dispatch method not found")
+            HookLog.w(TAG, "[Android15] ScreenCaptureCallback dispatch method not found")
             return
         }
         candidates.forEach { method ->
@@ -41,16 +41,28 @@ object Android14ScreenshotBlocker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
-                        resultNull()
-                        HookLog.i(TAG, "[Android14] ScreenCaptureCallback blocked")
+                        val enabled = readEnabled()
+                        HookLog.i(
+                            TAG,
+                            "[Android15] ${if (enabled) "BLOCK" else "ALLOW"} " +
+                                "${method.name}${method.parameterTypes.contentToString()} " +
+                                "args=${args.contentToString()}"
+                        )
+                        if (enabled) resultNull()
                     }
                 }
-                HookLog.i(TAG, "[Android14] ScreenCaptureCallback hooked: ${method.name}")
+                HookLog.i(TAG, "[Android15] ScreenCaptureCallback hooked: ${method.name}")
             }.onFailure {
-                HookLog.e(TAG, "[Android14] hook failed: ${method.toGenericString()}", it)
+                HookLog.e(TAG, "[Android15] hook failed: ${method.toGenericString()}", it)
             }
         }
     }
+
+    private fun readEnabled(): Boolean = runCatching {
+        ScreenshotConfig.enableAndroid14Blocker
+    }.onFailure {
+        HookLog.e(TAG, "[Android15] failed to read current switch state; allowing callback", it)
+    }.getOrDefault(false)
 
     private fun allMethods(clazz: Class<*>): List<Method> = buildList {
         var current: Class<*>? = clazz

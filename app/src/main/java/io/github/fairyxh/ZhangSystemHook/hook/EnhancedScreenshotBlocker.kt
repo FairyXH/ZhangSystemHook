@@ -18,6 +18,7 @@ object EnhancedScreenshotBlocker : YukiBaseHooker() {
             HookLog.i(TAG, "[Enhanced] disabled")
             return
         }
+        HookLog.i(TAG, "[Enhanced] installing ContentResolver hooks")
         hookContentObservers()
         hookQueries()
     }
@@ -25,14 +26,21 @@ object EnhancedScreenshotBlocker : YukiBaseHooker() {
     private fun hookContentObservers() {
         runCatching {
             val clazz = "android.content.ContentResolver".toClass()
-            clazz.declaredMethods.filter { it.name == "registerContentObserver" }.forEach { method ->
+            val candidates = clazz.declaredMethods.filter { it.name == "registerContentObserver" }
+            if (candidates.isEmpty()) {
+                HookLog.w(TAG, "[Enhanced] candidate not found: ContentResolver.registerContentObserver")
+                return
+            }
+            candidates.forEach { method ->
                 method.isAccessible = true
                 method.hook {
                     before {
                         val uri = args.firstOrNull { it is Uri } as? Uri
                         if (uri?.isScreenshotUri() == true) {
                             resultNull()
-                            HookLog.i(TAG, "[Enhanced] MediaStore observer blocked")
+                            HookLog.i(TAG, "[Enhanced] BLOCK observer uri=$uri args=${args.contentToString()}")
+                        } else {
+                            HookLog.i(TAG, "[Enhanced] ALLOW observer uri=$uri")
                         }
                     }
                 }
@@ -44,7 +52,12 @@ object EnhancedScreenshotBlocker : YukiBaseHooker() {
     private fun hookQueries() {
         runCatching {
             val clazz = "android.content.ContentResolver".toClass()
-            clazz.declaredMethods.filter { it.name == "query" }.forEach { method ->
+            val candidates = clazz.declaredMethods.filter { it.name == "query" }
+            if (candidates.isEmpty()) {
+                HookLog.w(TAG, "[Enhanced] candidate not found: ContentResolver.query")
+                return
+            }
+            candidates.forEach { method ->
                 method.isAccessible = true
                 method.hook {
                     after {
@@ -52,6 +65,9 @@ object EnhancedScreenshotBlocker : YukiBaseHooker() {
                         val cursor = result as? Cursor
                         if (uri?.isMediaStoreUri() == true && cursor != null && cursor !is ScreenshotFilteringCursor) {
                             result = ScreenshotFilteringCursor(cursor)
+                            HookLog.i(TAG, "[Enhanced] FILTER query uri=$uri count=${(result as Cursor).count}")
+                        } else {
+                            HookLog.i(TAG, "[Enhanced] ALLOW query uri=$uri cursor=${cursor != null}")
                         }
                     }
                 }

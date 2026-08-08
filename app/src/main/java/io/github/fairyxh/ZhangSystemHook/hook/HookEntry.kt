@@ -43,14 +43,16 @@ class HookEntry : IYukiHookXposedInit {
         YukiHookAPI.Configs.isDebug = false
 
         SystemNotifier.sendUserMsg(msg = "ZhangSystemHook 开始运行")
+        var targetPackages = emptySet<String>()
         loadSystem {
             ConfigData.init(this)
+            targetPackages = ScreenshotConfig.targetPackages.toSet()
             loadHooker(AccessibilityHooker)
             loadHooker(DPMHooker)
             loadHooker(Android14ScreenshotBlocker)
             loadHooker(AudioCommunicationModeHooker)
         }
-        ScreenshotConfig.targetPackages
+        targetPackages
             .filter { it != BuildConfig.APPLICATION_ID }
             .forEach { targetPackage ->
                 loadApp(targetPackage) {

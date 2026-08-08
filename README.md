@@ -18,6 +18,17 @@
   - 默认跳过部分系统关键组件；可选是否阻止以 `android.` 开头的系统组件。
   - 内置高性能路径：默认跳过高频 `AccessibilityNodeInfo`、`AccessibilityEvent` 等节点级 Hook，降低输入法和系统 UI 卡顿风险。
 
+- **禁止App切换通话模式**
+  - 在 `android` 系统进程中 Hook `AudioService` / `AudioSystem` 的音频模式与路由链路。
+  - 开关开启后所有应用一视同仁：禁止进入通话/通信模式，禁止使用听筒，通信音频强制输出到内置扬声器并按媒体音量播放，音量键仍可正常调节。
+  - 多入口、多方案自动适配：覆盖 `setMode`、`setOriginalMode`、`onUpdateAudioMode`/`setModeInt`、`AudioSystem.setPhoneState` 等模式入口，以及 `setCommunicationDevice`、`setPreferredDeviceForStrategy`、`setSpeakerphoneOn` 等路由入口；各方案独立安装，当前 ROM 缺少对应方法时自动跳过并记录日志。
+  - 系统层禁用听筒设备：拦截听筒连接请求、向系统报告听筒不可用并主动断开听筒，使路由策略回落到扬声器。
+  - 兜底强制回退：检测到通话/通信模式已实际生效时，自动调用 `setMode(MODE_NORMAL)` 切回普通模式。
+
+- **截屏防检测**
+  - Android 14+ 使用系统官方 `ScreenCaptureCallback` API 拦截截图检测回调（`Android14ScreenshotBlocker`）。
+  - 可选增强模式（`EnhancedScreenshotBlocker`）过滤 MediaStore 中的截图记录与 ContentObserver 通知，不影响普通图片读取。
+
 - **设备策略 Hook**
   - 在 `DevicePolicyManagerService` 中调整账号检查、设备所有者设置前置条件和部分权限校验。
   - 该功能可能影响设备管理、企业策略和系统设置稳定性。
@@ -49,6 +60,7 @@
 | 阻止系统组件访问无障碍 | 允许进一步限制系统组件；可能降低系统稳定性 |
 | 显示 Hook 通知 | 将 Hook 过程输出为日志/Toast；高频 Hook 场景不建议开启 |
 | 应用列表 | 配置被允许读取无障碍信息的包名集合 |
+| 禁止App切换通话模式 | 开启后禁止所有应用进入通话/通信模式、使用听筒，通信音频强制输出到扬声器并按媒体音量播放 |
 
 应用规则的默认行为：
 
@@ -102,8 +114,8 @@ app\build\outputs\apk\debug\app-debug.apk
 
 项目参数：
 
-- `compileSdk = 34`
-- `targetSdk = 34`
+- `compileSdk = 35`
+- `targetSdk = 35`
 - `minSdk = 27`
 - Java/Kotlin JVM target = 17
 - 包名：`io.github.fairyxh.ZhangSystemHook`
@@ -121,10 +133,15 @@ app\build\outputs\apk\debug\app-debug.apk
 ```text
 app/src/main/java/io/github/fairyxh/ZhangSystemHook/
 ├── hook/
-│   ├── AccessibilityHooker.kt   # 无障碍相关 Hook
-│   ├── DPMHooker.kt              # DevicePolicyManagerService Hook
-│   ├── ColorOSHomeHooker.kt      # ColorOS 启动器 Hook
-│   └── MethodMonitor.kt          # 实验性方法监视器
+│   ├── AccessibilityHooker.kt       # 无障碍相关 Hook
+│   ├── AudioCommunicationModeHooker.kt # 禁止通话模式/听筒，强制扬声器与媒体音量
+│   ├── Android14ScreenshotBlocker.kt  # Android 14+ 截屏检测回调拦截
+│   ├── EnhancedScreenshotBlocker.kt   # 增强截屏防检测（MediaStore 过滤）
+│   ├── ScreenCaptureDetectionHooker.kt # 截屏检测相关 Hook
+│   ├── DPMHooker.kt                  # DevicePolicyManagerService Hook
+│   ├── ColorOSHomeHooker.kt          # ColorOS 启动器 Hook
+│   ├── HookEntry.kt                  # 模块入口与 Hook 加载
+│   └── MethodMonitor.kt              # 实验性方法监视器
 ├── ui/activity/                  # 主界面和应用配置界面
 ├── data/                         # 配置读取、刷新和导入导出
 └── application/                  # Application、通知和启动状态工具

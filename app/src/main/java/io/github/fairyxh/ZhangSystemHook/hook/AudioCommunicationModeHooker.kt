@@ -41,6 +41,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         hookMethods(audioService, "startBluetoothScoVirtualCall")
         hookMethods(audioService, "stopBluetoothSco")
         hookVolumeSelection(audioService)
+        hookEarpieceDisable()
         HookLog.i(TAG, "[Audio] AudioService hook scan completed")
     }
 
@@ -303,7 +304,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.hook {
                     before {
                         val enabled = communicationModeBlocked()
-                        val streamIndex = volumeStreamParameterIndex(method)
+                        val streamIndex = volumeStreamParameterIndex(method, args)
                         if (streamIndex != null) {
                             val uid = Binder.getCallingUid()
                             val context = findContext(instance)
@@ -342,6 +343,135 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         }.onFailure { HookLog.e(TAG, "[Audio] failed to hook adjustStreamVolume family", it) }
     }
 
+    /**
+     * AudioSystem 隐藏常量：听筒输出设备 / 设备状态。
+     */
+    private const val DEVICE_OUT_EARPIECE = 0x00000001
+    private const val DEVICE_STATE_UNAVAILABLE = 0
+    private const val DEVICE_STATE_AVAILABLE = 1
+    private const val EARPIECE_DISCONNECT_DELAY_MS = 5000L
+
+    private var audioSystemClass: Class<*>? = null
+
+    /**
+     * 从系统层面禁用听筒：任何“连接听筒”请求改写为“断开”，查询听筒状态返回不可用，
+     * 并在安装后主动断开一次。应用（如 QQ）无法把通信音频路由到听筒，系统会回落到扬声器。
+     */
+    private fun hookEarpieceDisable() {
+        val audioSystem = runCatching {
+            "android.media.AudioSystem".toClass()
+        }.getOrElse {
+            HookLog.e(TAG, "[Earpiece] AudioSystem class unavailable", it)
+            return
+        }
+        audioSystemClass = audioSystem
+        val setters = runCatching {
+            allMethods(audioSystem).filter { it.name.startsWith("setDeviceConnectionState") }
+                .distinctBy(Method::toGenericString)
+        }.getOrElse {
+            HookLog.e(TAG, "[Earpiece] setDeviceConnectionState discovery failed", it)
+            emptyList()
+        }
+        if (setters.isEmpty()) {
+            HookLog.w(TAG, "[Earpiece] candidate not found: AudioSystem.setDeviceConnectionState*")
+        }
+        setters.forEach { method ->
+            runCatching {
+                method.isAccessible = true
+                method.hook {
+                    before {
+                        if (communicationModeBlocked()) {
+                            val device = firstInt(args)
+                            val state = if (method.parameterTypes.size >= 2 &&
+                                method.parameterTypes[1] == Int::class.javaPrimitiveType
+                            ) {
+                                args.getOrNull(1) as? Int
+                            } else null
+                            if (device == DEVICE_OUT_EARPIECE && state == DEVICE_STATE_AVAILABLE) {
+                                args[1] = DEVICE_STATE_UNAVAILABLE
+                                HookLog.i(
+                                    TAG,
+                                    "[Earpiece] REWRITE_EARPIECE_OFF ${method.name}${method.parameterTypes.contentToString()} " +
+                                        "args=${args.contentToString()}"
+                                )
+                            }
+                        }
+                    }
+                }
+                HookLog.i(TAG, "[Earpiece] installed ${method.name}${method.parameterTypes.contentToString()}")
+            }.onFailure {
+                HookLog.e(TAG, "[Earpiece] hook failed: ${method.toGenericString()}", it)
+            }
+        }
+        val getters = runCatching {
+            allMethods(audioSystem).filter { it.name == "getDeviceConnectionState" }
+                .distinctBy(Method::toGenericString)
+        }.getOrElse {
+            HookLog.e(TAG, "[Earpiece] getDeviceConnectionState discovery failed", it)
+            emptyList()
+        }
+        if (getters.isEmpty()) {
+            HookLog.w(TAG, "[Earpiece] candidate not found: AudioSystem.getDeviceConnectionState")
+        }
+        getters.forEach { method ->
+            runCatching {
+                method.isAccessible = true
+                method.hook {
+                    before {
+                        if (communicationModeBlocked()) {
+                            val device = firstInt(args)
+                            if (device == DEVICE_OUT_EARPIECE) {
+                                result = DEVICE_STATE_UNAVAILABLE
+                                HookLog.i(
+                                    TAG,
+                                    "[Earpiece] REPORT_UNAVAILABLE ${method.name}${method.parameterTypes.contentToString()} " +
+                                        "args=${args.contentToString()}"
+                                )
+                            }
+                        }
+                    }
+                }
+                HookLog.i(TAG, "[Earpiece] installed ${method.name}${method.parameterTypes.contentToString()}")
+            }.onFailure {
+                HookLog.e(TAG, "[Earpiece] hook failed: ${method.toGenericString()}", it)
+            }
+        }
+        correctionHandler.postDelayed({
+            if (communicationModeBlocked()) {
+                disconnectEarpiece()
+            }
+        }, EARPIECE_DISCONNECT_DELAY_MS)
+    }
+
+    private fun disconnectEarpiece() {
+        val clazz = audioSystemClass ?: return
+        val method = runCatching {
+            allMethods(clazz)
+                .filter {
+                    it.name.startsWith("setDeviceConnectionState") &&
+                        it.parameterTypes.size >= 3 &&
+                        it.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                        it.parameterTypes[1] == Int::class.javaPrimitiveType
+                }
+                .sortedByDescending { it.parameterTypes.size }
+                .firstOrNull()
+        }.getOrNull() ?: run {
+            HookLog.w(TAG, "[Earpiece] setDeviceConnectionState method not found for disconnect")
+            return
+        }
+        runCatching {
+            method.isAccessible = true
+            val invokeArgs = when (method.parameterTypes.size) {
+                4 -> arrayOf<Any?>(DEVICE_OUT_EARPIECE, DEVICE_STATE_UNAVAILABLE, "", "")
+                else -> arrayOf<Any?>(DEVICE_OUT_EARPIECE, DEVICE_STATE_UNAVAILABLE, "")
+            }
+            method.invoke(null, *invokeArgs)
+            HookLog.i(TAG, "[Earpiece] disconnected earpiece via ${method.name}")
+        }.onFailure {
+            HookLog.e(TAG, "[Earpiece] disconnect failed", it)
+        }
+    }
+
     private fun allMethods(clazz: Class<*>): List<Method> = buildList {
         var current: Class<*>? = clazz
         while (current != null) {
@@ -354,14 +484,33 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         it == Int::class.javaPrimitiveType || it == Int::class.javaObjectType
     }
 
-    private fun volumeStreamParameterIndex(method: Method): Int? {
+    /**
+     * 定位音量调整方法中的 stream 参数槽。
+     * adjustStreamVolume* 族 stream 恒在参数 0；
+     * adjustSuggestedStreamVolume* 族 AOSP 顺序为 (direction, suggestedStream, ...)，但华为/荣耀的
+     * adjustSuggestedStreamVolumeForUid 是 (suggestedStream, direction, ...)，参数 0 恒为 USE_DEFAULT_STREAM_TYPE，
+     * 参数 1 才是方向。这里按运行时值启发式识别，避免把方向参数改写坏导致音量键失效。
+     */
+    private fun volumeStreamParameterIndex(method: Method, args: Array<Any?>): Int? {
         val parameterTypes = method.parameterTypes
         val intType = Int::class.javaPrimitiveType
         return when {
-            method.name.startsWith("adjustSuggestedStreamVolume") ->
-                if (parameterTypes.size >= 2 && parameterTypes[0] == intType && parameterTypes[1] == intType) 1 else null
-            method.name.startsWith("adjustStreamVolume") ->
+            method.name.startsWith("adjustStreamVolume") -> {
                 if (parameterTypes.isNotEmpty() && parameterTypes[0] == intType) 0 else null
+            }
+            method.name.startsWith("adjustSuggestedStreamVolume") -> {
+                if (parameterTypes.size < 2 || parameterTypes[0] != intType || parameterTypes[1] != intType) {
+                    null
+                } else {
+                    val first = args.getOrNull(0) as? Int
+                    val second = args.getOrNull(1) as? Int
+                    when {
+                        first == AudioManager.USE_DEFAULT_STREAM_TYPE -> 0
+                        second == AudioManager.USE_DEFAULT_STREAM_TYPE -> 1
+                        else -> 1
+                    }
+                }
+            }
             else -> null
         }
     }

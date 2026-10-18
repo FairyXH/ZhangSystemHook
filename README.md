@@ -2,6 +2,8 @@
 
 一个基于 Kotlin、YukiHookAPI 和 Xposed/LSPosed 的 Android 系统增强模块。
 
+详细的入口机制、实际加载范围、Hook 方法、参数操作、返回值及配置限制，参见 [Hook 与功能说明](docs/HOOKS_AND_FEATURES.md)。该文档按当前源码区分已接入功能、未挂载分支及待验证行为。
+
 本模块主要用于调整系统和应用对无障碍服务状态的读取结果，并提供设备策略、ColorOS 启动器应用锁等附加 Hook。模块只在 Xposed/LSPosed 注入后生效，普通方式直接启动 APK 不会启用系统 Hook。
 
 > 当前项目属于面向特定 Android/ColorOS 版本的实验性系统模块。系统内部类、方法签名和厂商实现可能随 ROM 版本变化，使用前请准备好禁用模块或进入 LSPosED 安全模式的恢复方式。

@@ -13,7 +13,8 @@ object HookRuntime {
     lateinit var api: XposedInterface
     var classLoader: ClassLoader = ClassLoader.getSystemClassLoader()
     var packageName: String = "android"
-    private val installed = ConcurrentHashMap.newKeySet<Method>()
+    private data class Registration(val method: Method, val before: Class<*>?, val after: Class<*>?)
+    private val installed = ConcurrentHashMap.newKeySet<Registration>()
     private val methodCache = ConcurrentHashMap<Class<*>, List<Method>>()
     private val lastLog = ConcurrentHashMap<String, Long>()
     @Volatile var context: Context? = null
@@ -35,8 +36,8 @@ object HookRuntime {
         else Log.println(priority, tag, message + (error?.let { "\n${Log.getStackTraceString(it)}" } ?: ""))
     }
 
-    fun diagnostic(tag: String, message: () -> String) {
-        if (!ConfigData.flag("show_notice")) return
+    fun diagnostic(tag: String, force: Boolean = false, message: () -> String) {
+        if (!force && !ConfigData.flag("show_notice")) return
         val now = SystemClock.elapsedRealtime()
         val key = "$tag:${Thread.currentThread().id}"
         val previous = lastLog[key] ?: 0L
@@ -46,17 +47,25 @@ object HookRuntime {
         }
     }
 
-    fun install(method: Method, before: (HookCall.() -> Unit)? = null, after: (HookCall.() -> Unit)? = null) {
-        if (!installed.add(method)) return
+    fun install(method: Method, before: (HookCall.() -> Unit)? = null, after: (HookCall.() -> Unit)? = null,
+                propagateFailure: Boolean = false) {
+        val registration = Registration(method, before?.javaClass, after?.javaClass)
+        if (!installed.add(registration)) return
         try {
             method.isAccessible = true
-            api.hook(method).intercept { chain ->
+            val builder = api.hook(method)
+            if (propagateFailure) builder.setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            builder.intercept { chain ->
                 if (!ConfigData.isEnableModule) return@intercept chain.proceed()
+                if (ConfigData.flag("MothodMonitor_SW") && method.declaringClass.name.contains("accessibility", true)) {
+                    diagnostic("MethodMonitor", force = true) { method.toGenericString() }
+                }
                 val call = HookCall(chain)
                 try { before?.invoke(call) } catch (error: Throwable) {
                     log(Log.ERROR, "HookCallback", "before failed: $method", error)
                     return@intercept chain.proceed()
                 }
+                call.failure?.let { throw it }
                 val original = if (call.hasResult) call.result else {
                     // Original exceptions propagate; never replay an operation that may have changed state.
                     if (call.hasArguments) chain.proceed(call.args) else chain.proceed()
@@ -66,17 +75,19 @@ object HookRuntime {
                     log(Log.ERROR, "HookCallback", "after failed: $method", error)
                     return@intercept original
                 }
+                call.failure?.let { throw it }
                 call.result
             }
             log(Log.INFO, "HookInstall", method.toGenericString())
         } catch (error: Throwable) {
-            installed.remove(method)
+            installed.remove(registration)
             log(Log.WARN, "HookInstall", "Unavailable: $method", error)
         }
     }
 
     fun named(className: String, vararg names: String, before: (HookCall.() -> Unit)? = null,
-              after: (HookCall.() -> Unit)? = null, filter: (Method) -> Boolean = { true }) {
+              after: (HookCall.() -> Unit)? = null, propagateFailure: Boolean = false,
+              filter: (Method) -> Boolean = { true }) {
         val type = findClass(className)
         if (type == null) {
             log(Log.WARN, "HookInstall", "Class unavailable: $className")
@@ -84,11 +95,12 @@ object HookRuntime {
         }
         val matches = methods(type).filter { it.name in names && filter(it) }
         if (matches.isEmpty()) log(Log.WARN, "HookInstall", "Methods unavailable: $className ${names.toList()}")
-        matches.forEach { install(it, before, after) }
+        matches.forEach { install(it, before, after, propagateFailure) }
     }
 }
 
 class HookCall(private val chain: XposedInterface.Chain) {
+    var failure: Throwable? = null
     val instance: Any? get() = chain.thisObject
     val method: Method get() = chain.executable as Method
     private var changedArguments: Array<Any?>? = null

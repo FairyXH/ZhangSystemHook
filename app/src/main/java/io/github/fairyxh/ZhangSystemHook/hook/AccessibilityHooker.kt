@@ -85,6 +85,9 @@ object AccessibilityHooker : BaseHooker() {
             }
             installExtended()
             ConfigData.observe(installExtended)
+            val installOptional = { if (ConfigData.flag("extended_filter_enabled")) hookOptionalFilters() }
+            installOptional()
+            ConfigData.observe(installOptional)
         }
     }
 
@@ -188,6 +191,44 @@ object AccessibilityHooker : BaseHooker() {
 
     private fun constant(type: String, names: Array<String>, value: Any?) {
         HookRuntime.named(type, *names, before = { if (blocked(extended = true)) result = value })
+    }
+
+    private fun hookOptionalFilters() {
+        fun enabled() = ConfigData.flag("extended_filter_enabled") && blocked(extended = true)
+        HookRuntime.named("android.view.accessibility.AccessibilityManager", "addAccessibilityRequestPreparer",
+            "addAccessibilityInteractionConnection", before = {
+                if (enabled()) result = when (method.returnType) {
+                    Boolean::class.javaPrimitiveType -> true
+                    Int::class.javaPrimitiveType -> 0
+                    else -> null
+                }
+            })
+        HookRuntime.named("android.content.BroadcastReceiver", "onReceive", before = {
+            if (enabled() && args.filterIsInstance<Intent>().any {
+                it.action == "android.settings.SETTINGS_CHANGED" &&
+                    it.getStringExtra("settings_changed") in setOf(Settings.Secure.ACCESSIBILITY_ENABLED, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            }) resultNull()
+        })
+        HookRuntime.named("androidx.localbroadcastmanager.content.LocalBroadcastManager", "registerReceiver", before = {
+            if (enabled() && args.filterIsInstance<IntentFilter>().any { filter ->
+                (0 until filter.countActions()).any { filter.getAction(it).contains("accessibility", true) }
+            }) resultNull()
+        })
+        fun relevant(type: Any?) = (type as? Class<*>)?.name?.let {
+            it.contains("AccessibilityManager") || it.contains("AccessibilityService")
+        } == true
+        fun sensitive(name: String) = name.contains("isEnabled") || name.contains("getService") || name.contains("getEnabled")
+        HookRuntime.named("java.lang.Class", "getDeclaredMethod", "getMethod", before = {
+            if (enabled() && relevant(instance) && sensitive(arg(0) as? String ?: "")) {
+                failure = NoSuchMethodException("Method not found")
+            }
+        }, propagateFailure = true)
+        HookRuntime.named("java.lang.Class", "getDeclaredMethods", after = {
+            if (enabled() && relevant(instance)) {
+                @Suppress("UNCHECKED_CAST")
+                result = (result as? Array<java.lang.reflect.Method>)?.filterNot { sensitive(it.name) }?.toTypedArray()
+            }
+        })
     }
 
     private fun hookNodes() {

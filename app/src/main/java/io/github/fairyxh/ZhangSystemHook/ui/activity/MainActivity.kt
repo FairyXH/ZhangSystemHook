@@ -68,6 +68,7 @@ class MainActivity : IosActivity() {
             }
             setting(card, "show_notice", "显示 Hook 日志与提示", "诊断日志及 Toast 已限流")
             setting(card, "MothodMonitor_SW", "方法监视器", "记录无障碍调用；默认关闭")
+            setting(card, "extended_filter_enabled", "扩展广播与反射过滤", "需关闭高性能模式；默认关闭")
             row(card, "导出配置", "包含功能开关和应用名单") {
                 startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                     type = "text/xml"; addCategory(Intent.CATEGORY_OPENABLE); putExtra(Intent.EXTRA_TITLE, "ZhangSystemHook.xml")

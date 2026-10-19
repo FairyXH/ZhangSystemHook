@@ -58,12 +58,16 @@ class AppsConfigActivity : IosActivity() {
         content.addView(categories, LinearLayout.LayoutParams(-1, dp(48)))
         count = label("正在读取应用…", 12, color = secondary).apply { setPadding(dp(4), dp(8), 0, dp(12)) }
         content.addView(count)
+        val empty = label("没有匹配应用", 15, color = secondary).apply {
+            gravity = Gravity.CENTER; visibility = View.GONE
+        }
+        content.addView(empty, LinearLayout.LayoutParams(-1, dp(100)))
         list = ListView(this).apply {
             divider = null
             background = rounded(surface)
             clipToOutline = true
             adapter = this@AppsConfigActivity.adapter
-            emptyView = this@AppsConfigActivity.count
+            emptyView = empty
             setOnItemClickListener { _, _, position, _ ->
                 ConfigData.blockApps.switch(visible[position].info.packageName)
                 this@AppsConfigActivity.adapter.notifyDataSetChanged()

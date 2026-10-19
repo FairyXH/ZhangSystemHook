@@ -9,6 +9,7 @@ import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.File
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.Executors
 
 object ConfigData {
     const val GROUP = "zhang_system_hook"
@@ -18,12 +19,15 @@ object ConfigData {
     val knownKeys = setOf("_enable_module", "accessibility_hook_enable", "high_performance_mode",
         "allow_client_method", "system_app_whitelist", "block_system", "_block_apps", "show_notice",
         "MothodMonitor_SW", "block_screen_capture_detection", "enable_android14_screenshot_blocker",
-        "enable_enhanced_screenshot_blocker", "block_third_party_communication_mode", "dpm_enabled", "launcher_enabled")
+        "enable_enhanced_screenshot_blocker", "block_third_party_communication_mode", "dpm_enabled", "launcher_enabled",
+        "extended_filter_enabled")
     @Volatile private var snapshot: Map<String, *> = emptyMap<String, Any>()
     @Volatile private var packageSnapshot: Set<String> = setOf(BuildConfig.APPLICATION_ID)
     private var prefs: SharedPreferences? = null
     private var local: SharedPreferences? = null
     private var remote: SharedPreferences? = null
+    private val writer = Executors.newSingleThreadExecutor { task -> Thread(task, "ConfigWriter").apply { isDaemon = true } }
+    @Volatile private var pending: Map<String, Any> = emptyMap()
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { source, _ ->
         if (source === prefs) refresh()
@@ -56,6 +60,7 @@ object ConfigData {
             .forEach { (key, value) -> put(editor, key, value) }
         check(editor.commit()) { "Remote preferences commit failed" }
         remote = source
+        pending = emptyMap()
         mirror.edit().remove("_pending_keys").apply()
         bind(source)
         val copy = mirror.edit()
@@ -67,7 +72,7 @@ object ConfigData {
     fun observe(listener: () -> Unit) { listeners.add(listener) }
     fun removeObserver(listener: () -> Unit) { listeners.remove(listener) }
     fun refresh() {
-        snapshot = prefs?.all?.toMap() ?: emptyMap<String, Any>()
+        snapshot = (prefs?.all?.toMap() ?: emptyMap<String, Any>()) + pending
         packageSnapshot = (snapshot["_block_apps"] as? Set<*>)?.filterIsInstance<String>()?.toSet()
             ?: setOf(BuildConfig.APPLICATION_ID)
         listeners.forEach { it() }
@@ -84,15 +89,30 @@ object ConfigData {
         val localEditor = mirror.edit()
         put(localEditor, key, value)
         localEditor.putStringSet("_pending_keys", dirty).apply()
-        remote?.let { destination ->
-            runCatching {
-                val editor = destination.edit()
-                put(editor, key, value)
-                check(editor.commit())
-                mirror.edit().putStringSet("_pending_keys", dirty - key).apply()
-            }.onFailure { disconnect() }
-        }
+        pending = pending + (key to value)
         refresh()
+        writer.execute { flush() }
+    }
+
+    private fun flush() {
+        val batch = synchronized(this) { Triple(remote, local, pending) }
+        val destination = batch.first ?: return
+        val mirror = batch.second ?: return
+        val updates = batch.third
+        if (updates.isEmpty()) return
+        runCatching {
+            val editor = destination.edit()
+            updates.forEach { (key, value) -> put(editor, key, value) }
+            check(editor.commit()) { "Remote preferences commit failed" }
+            synchronized(this) {
+                if (remote !== destination) return
+                val completed = updates.keys.filter { pending[it] == updates[it] }.toSet()
+                pending = pending - completed
+                val dirty = mirror.getStringSet("_pending_keys", emptySet()).orEmpty()
+                mirror.edit().putStringSet("_pending_keys", dirty - completed).apply()
+                refresh()
+            }
+        }.onFailure { disconnect() }
     }
 
     private fun put(editor: SharedPreferences.Editor, key: String, value: Any?) {

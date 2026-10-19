@@ -13,6 +13,7 @@ import android.os.Process
 import android.telephony.TelephonyManager
 import io.github.fairyxh.ZhangSystemHook.core.BaseHooker
 import io.github.fairyxh.ZhangSystemHook.core.HookRuntime
+import io.github.fairyxh.ZhangSystemHook.core.ReflectCache
 import io.github.fairyxh.ZhangSystemHook.data.ConfigData
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
@@ -68,6 +69,7 @@ object AudioCommunicationModeHooker : BaseHooker() {
                 method.hook {
                     before {
                         if (!communicationModeBlocked()) return@before
+                        if (methodName != "setMode" && !ConfigData.flag("show_notice")) return@before
                         val decision = decide(methodName, instance, args)
                         val normalizeMode = methodName == "setMode" && decision.block
                         HookLog.i("AudioMode") { "$methodName${method.parameterTypes.contentToString()} uid=${decision.uid} " +
@@ -363,7 +365,7 @@ object AudioCommunicationModeHooker : BaseHooker() {
             allMethods(clazz)
                 .filter { method ->
                     method.name.startsWith("setCommunicationDevice") &&
-                        method.parameterTypes.size == 2 &&
+                        method.parameterTypes.size >= 2 &&
                         IBinder::class.java.isAssignableFrom(method.parameterTypes[0]) &&
                         (method.parameterTypes[1] == Int::class.javaPrimitiveType ||
                             method.parameterTypes[1] == AudioDeviceInfo::class.java)
@@ -980,7 +982,8 @@ object AudioCommunicationModeHooker : BaseHooker() {
         // 系统/特权调用（Telephony、SystemUI、蓝牙服务）放行，避免误伤真实电话与用户主动切换
         val systemCall = privileged || systemApp
         val block = enabled && acquisition && !systemCall
-        return Decision(uid, packageName, enabled, privileged, block, describeState(audioService, context))
+        return Decision(uid, packageName, enabled, privileged, block,
+            if (ConfigData.flag("show_notice")) describeState(audioService, context) else "")
     }
 
     private fun firstInt(args: Array<Any?>): Int? = args.firstOrNull { it is Int } as? Int
@@ -1003,10 +1006,7 @@ object AudioCommunicationModeHooker : BaseHooker() {
 
     /** 读取当前通话模式持有者的 Binder（ColorOS: SetModeDeathHandler.getBinder()）。 */
     private fun readModeOwnerBinder(service: Any?): IBinder? = runCatching {
-        val field = generateSequence(service?.javaClass) { it.superclass }
-            .flatMap { it.declaredFields.asSequence() }
-            .firstOrNull { it.name == "mSetModeDeathHandlers" }
-            ?: return null
+        val field = ReflectCache.field(service, "mSetModeDeathHandlers") ?: return null
         field.isAccessible = true
         val handlers = field.get(service) as? List<*> ?: return null
         for (handler in handlers) {
@@ -1020,10 +1020,7 @@ object AudioCommunicationModeHooker : BaseHooker() {
 
     /** 当前通话/通信模式的持有者 uid；无法判定时返回 null（调用方需 fail-open）。 */
     private fun currentModeOwnerUid(service: Any?): Int? = runCatching {
-        val field = generateSequence(service?.javaClass) { it.superclass }
-            .flatMap { it.declaredFields.asSequence() }
-            .firstOrNull { it.name == "mSetModeDeathHandlers" }
-            ?: return null
+        val field = ReflectCache.field(service, "mSetModeDeathHandlers") ?: return null
         field.isAccessible = true
         val handlers = field.get(service) as? List<*> ?: return null
         for (handler in handlers) {
@@ -1044,38 +1041,19 @@ object AudioCommunicationModeHooker : BaseHooker() {
     }
 
     private fun invokeObject(service: Any?, name: String): Any? = runCatching {
-        val method = generateSequence(service?.javaClass) { it.superclass }
-            .flatMap { it.declaredMethods.asSequence() }
-            .firstOrNull { it.name == name && it.parameterTypes.isEmpty() }
-            ?: return null
-        method.isAccessible = true
-        method.invoke(service)
+        ReflectCache.invoke(service, name)
     }.getOrNull()
 
-    private fun setModeMethod(service: Any?): Method? = runCatching {
-        generateSequence(service?.javaClass) { it.superclass }
-            .flatMap { it.declaredMethods.asSequence() }
-            .filter {
-                it.name == "setMode" && it.parameterTypes.isNotEmpty() &&
-                    it.parameterTypes[0] == Int::class.javaPrimitiveType
-            }
-            .firstOrNull { it.parameterTypes.size == 3 }
-            ?: generateSequence(service?.javaClass) { it.superclass }
-                .flatMap { it.declaredMethods.asSequence() }
-                .filter {
-                    it.name == "setMode" && it.parameterTypes.size == 2 &&
-                        it.parameterTypes[0] == Int::class.javaPrimitiveType
-                }
-                .firstOrNull()
-    }.getOrNull()
+    private fun setModeMethod(service: Any?): Method? {
+        val type = service?.javaClass ?: return null
+        return allMethods(type).filter { it.name == "setMode" &&
+            it.parameterTypes.firstOrNull() == Int::class.javaPrimitiveType &&
+            it.parameterTypes.size in 2..3 }.maxByOrNull { it.parameterTypes.size }
+    }
 
 
     private fun findContext(service: Any?): Context? = runCatching {
-        generateSequence(service?.javaClass) { it.superclass }
-            .mapNotNull { it.declaredFields.firstOrNull { field -> field.name == "mContext" } }
-            .firstOrNull()
-            ?.apply { isAccessible = true }
-            ?.get(service) as? Context
+        ReflectCache.field(service, "mContext")?.get(service) as? Context
     }.getOrNull()
 
     private fun hasRoutingPrivilege(context: Context?): Boolean = context?.let {
@@ -1108,19 +1086,11 @@ object AudioCommunicationModeHooker : BaseHooker() {
     }.getOrDefault("mode=?,activeStream=?,callState=?")
 
     private fun invokeInt(service: Any?, name: String, vararg args: Any): Int? = runCatching {
-        val method = generateSequence(service?.javaClass) { it.superclass }
-            .flatMap { it.declaredMethods.asSequence() }
-            .firstOrNull { it.name == name && it.parameterTypes.size == args.size }
-            ?: return null
-        method.isAccessible = true
-        method.invoke(service, *args) as? Int
+        ReflectCache.invoke(service, name, *args) as? Int
     }.getOrNull()
 
     private fun readIntField(service: Any?, name: String): Int? = runCatching {
-        val field = generateSequence(service?.javaClass) { it.superclass }
-            .flatMap { it.declaredFields.asSequence() }
-            .firstOrNull { it.name == name }
-            ?: return null
+        val field = ReflectCache.field(service, name) ?: return null
         field.isAccessible = true
         when (val value = field.get(service)) {
             is Int -> value

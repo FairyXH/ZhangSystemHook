@@ -9,8 +9,8 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.*
 
 object HookLog {
-    fun d(tag: String, msg: () -> String) = HookRuntime.diagnostic(tag, msg)
-    fun i(tag: String, msg: () -> String) = HookRuntime.diagnostic(tag, msg)
+    fun d(tag: String, msg: () -> String) = HookRuntime.diagnostic(tag, message = msg)
+    fun i(tag: String, msg: () -> String) = HookRuntime.diagnostic(tag, message = msg)
     fun w(tag: String, msg: String) = HookRuntime.log(Log.WARN, tag, msg)
     fun e(tag: String, msg: String, tr: Throwable? = null) = HookRuntime.log(Log.ERROR, tag, msg, tr)
 }

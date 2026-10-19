@@ -84,7 +84,7 @@ open class IosActivity : Activity() {
     }
     fun toggle(parent: LinearLayout, title: String, detail: String?, value: Boolean, update: (Boolean) -> Unit): Switch {
         val row = row(parent, title, detail)
-        val control = Switch(this).apply {
+        val control = IosSwitch(this).apply {
             contentDescription = title
             isChecked = value
             showText = false

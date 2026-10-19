@@ -25,6 +25,7 @@ class AppsConfigActivity : IosActivity() {
     private var visible = emptyList<App>()
     private var category = 0
     private var query = ""
+    private var loading = true
     private lateinit var count: TextView
     private lateinit var list: ListView
     private val adapter = AppsAdapter()
@@ -81,7 +82,7 @@ class AppsConfigActivity : IosActivity() {
                         it.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0)
                 }.sortedWith(compareBy<App> { !ConfigData.blockApps.contains(it.info.packageName) }.thenBy { it.name.lowercase() })
             }.getOrDefault(emptyList())
-            runOnUiThread { if (!isDestroyed) { all = loaded; filter() } }
+            runOnUiThread { if (!isDestroyed) { loading = false; all = loaded; filter() } }
         }
     }
     private fun filter() {
@@ -89,7 +90,7 @@ class AppsConfigActivity : IosActivity() {
             (category == 0 || (category == 2) == app.system) &&
                 (app.name.contains(query, true) || app.info.packageName.contains(query, true))
         }
-        if (::count.isInitialized) count.text = "${visible.size} 个应用"
+        if (::count.isInitialized) count.text = if (loading) "正在读取应用…" else "${visible.size} 个应用"
         adapter.notifyDataSetChanged()
     }
     private inner class Holder(val root: LinearLayout, val icon: ImageView, val title: TextView,

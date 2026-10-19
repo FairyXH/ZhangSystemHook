@@ -9,7 +9,7 @@
 - `onModuleLoaded`：绑定框架远程偏好，记录 API 对象。
 - `onSystemServerStarting`：设置系统 ClassLoader，分别安装无障碍、DPM、截图、音频 Hook。
 - `onPackageReady`：对被框架注入的主包初始化应用上下文捕获、无障碍应用侧路径、增强截图；桌面另安装 ColorOS Hook。
-- 推荐作用域：`android`、`com.android.providers.settings`、`com.android.launcher`。应用内功能需目标应用作用域。
+- 推荐作用域：系统框架（`system`）、`com.android.providers.settings`、`com.android.launcher`。API 102 的 `android` 指普通框架应用，不能替代 `system`。应用内功能需目标应用作用域。
 - 系统和应用入口独立执行，不再通过系统分支变量向应用分支传递截图目标列表。
 - 每个 Hooker 安装失败单独记录，不阻止其他功能继续安装。
 - 不开启自动热重载；更新 APK 后重新启动目标进程，系统 Hook 更新需要重启系统。

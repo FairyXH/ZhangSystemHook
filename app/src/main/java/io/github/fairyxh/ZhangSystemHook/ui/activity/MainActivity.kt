@@ -52,7 +52,7 @@ class MainActivity : IosActivity() {
             setting(card, "enable_android14_screenshot_blocker", "截屏回调防检测", "阻止系统向应用分发截图事件", true)
             setting(card, "enable_enhanced_screenshot_blocker", "增强截屏防检测", "过滤名单应用的媒体查询与截图 URI 观察者")
             setting(card, "block_third_party_communication_mode", "禁止应用切换通话模式", "普通应用回落至媒体模式，保留系统与蓝牙适配")
-            row(card, "申请目标应用作用域", "由框架显示授权界面") {
+            row(card, "申请核心与目标应用作用域", "包含系统框架，由框架显示授权界面") {
                 FrameworkTool.requestScope(ConfigData.blockApps.data.filter { it != packageName }) { toast(it) }
             }
         }

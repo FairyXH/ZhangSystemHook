@@ -1,2 +1,3 @@
+a15d86a2cc2f10cf59490627e38f6b1048b5fcf8f93fd714e6b416813078cdce  ZhangSystemHook-1.2.0.apk
 77b12b5d50c81a9c3d14073efa0ae9aa09454517e305a29352e406f2fe8a400f  ZhangSystemHook-api102-debug.apk
 0b792a11563959f1056cf548027c13443050ea168848b46ccecc912affafa2d8  ZhangSystemHook-api102-release-unsigned.apk

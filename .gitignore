@@ -15,6 +15,7 @@ captures/
 .externalNativeBuild/
 .cxx/
 *.apk
+*.idsig
 
 # IntelliJ
 *.iml

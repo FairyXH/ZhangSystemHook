@@ -1,23 +1,13 @@
 package io.github.fairyxh.ZhangSystemHook.application
 
-import android.content.Context
-import androidx.appcompat.app.AppCompatDelegate
-import com.highcapable.yukihookapi.hook.xposed.application.ModuleApplication
+import android.app.Application
 import io.github.fairyxh.ZhangSystemHook.data.ConfigData
-import io.github.fairyxh.ZhangSystemHook.utils.factory.locale
-import io.github.fairyxh.ZhangSystemHook.generated.locale.AppLocale
+import io.github.fairyxh.ZhangSystemHook.utils.tool.FrameworkTool
 
-class DefaultApplication : ModuleApplication() {
-
-    companion object {
-        lateinit var context: Context
-            private set
-    }
-
+class DefaultApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        locale = AppLocale.attach(this)
-        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         ConfigData.init(this)
+        FrameworkTool.connect()
     }
 }

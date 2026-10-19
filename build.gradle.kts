@@ -1,7 +1,3 @@
 plugins {
-    autowire(libs.plugins.android.application) apply false
-    autowire(libs.plugins.kotlin.android) apply false
-    autowire(libs.plugins.kotlin.ksp) apply false
-    autowire(libs.plugins.flexi.locale) apply false
+    id("com.android.application") version "9.3.0" apply false
 }
-

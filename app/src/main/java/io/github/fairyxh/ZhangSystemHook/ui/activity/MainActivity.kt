@@ -1,411 +1,172 @@
-@file:Suppress("SetTextI18n")
-
 package io.github.fairyxh.ZhangSystemHook.ui.activity
 
-import android.accessibilityservice.AccessibilityServiceInfo
-import android.annotation.SuppressLint
-import android.content.ContentResolver
-import android.content.Context
+import android.app.Activity
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
-import android.os.CancellationSignal
-
 import android.provider.Settings
-import android.util.Log
-import android.app.Activity
 import android.view.accessibility.AccessibilityManager
-import androidx.core.view.isVisible
-import com.highcapable.yukihookapi.YukiHookAPI
-import com.highcapable.yukihookapi.hook.xposed.prefs.data.PrefsData
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Switch
 import io.github.fairyxh.ZhangSystemHook.BuildConfig
-import io.github.fairyxh.ZhangSystemHook.R
-import io.github.fairyxh.ZhangSystemHook.application.DefaultApplication.Companion.context
 import io.github.fairyxh.ZhangSystemHook.application.SystemNotifier
 import io.github.fairyxh.ZhangSystemHook.data.ConfigData
-import io.github.fairyxh.ZhangSystemHook.data.ScreenshotConfig
-import io.github.fairyxh.ZhangSystemHook.databinding.ActivityMainBinding
-import io.github.fairyxh.ZhangSystemHook.ui.activity.base.BaseActivity
-import io.github.fairyxh.ZhangSystemHook.utils.factory.hideOrShowLauncherIcon
-import io.github.fairyxh.ZhangSystemHook.utils.factory.isLauncherIconShowing
-import io.github.fairyxh.ZhangSystemHook.utils.factory.locale
-import io.github.fairyxh.ZhangSystemHook.utils.factory.navigate
-import io.github.fairyxh.ZhangSystemHook.utils.factory.toast
+import io.github.fairyxh.ZhangSystemHook.ui.IosActivity
 import io.github.fairyxh.ZhangSystemHook.utils.tool.FrameworkTool
-import java.lang.reflect.Constructor
-import java.lang.reflect.Method
+import java.util.concurrent.Executors
 
-
-
-
-class MainActivity : BaseActivity<ActivityMainBinding>() {
-
-    private var audioTestInCommunicationMode = false
-    private var screenCaptureCallbackRegistered = false
-    private val screenCaptureCallback = Activity.ScreenCaptureCallback {
-        binding.testResultText.text = getString(R.string.test_screen_capture_detected)
-        Log.i("ScreenshotBlocker", "[App] ScreenCaptureCallback received: onScreenCaptured")
+class MainActivity : IosActivity() {
+    private lateinit var status: TextView
+    private lateinit var checks: TextView
+    private lateinit var testResult: TextView
+    private val switches = mutableMapOf<String, Switch>()
+    private val worker = Executors.newSingleThreadExecutor()
+    private var capture: AutoCloseable? = null
+    private val frameworkChanged: () -> Unit = { runOnUiThread { refreshStatus(); refreshSwitches() } }
+    private val configChanged: () -> Unit = { runOnUiThread { refreshSwitches() } }
+    private val alias get() = ComponentName(this, "$packageName.Home")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        page("设置", "ZhangSystemHook  ·  API 102")
+        group("模块状态") { card ->
+            status = label("正在连接框架…", 20, true).apply { setPadding(dp(18), dp(18), dp(18), dp(6)) }
+            card.addView(status)
+            card.addView(label("版本 ${BuildConfig.VERSION_NAME}  ·  Android ${Build.VERSION.RELEASE}", 12, color = secondary).apply {
+                setPadding(dp(18), 0, dp(18), dp(18))
+            })
+            setting(card, "_enable_module", "启用模块", "统一控制所有 Hook", true)
+        }
+        group("无障碍", "用户应用：勾选允许读取。系统应用默认：勾选阻止读取；开启系统白名单后，勾选允许读取。") { card ->
+            setting(card, "accessibility_hook_enable", "无障碍防检测", "隐藏服务列表与系统启用状态")
+            setting(card, "high_performance_mode", "高性能模式", "跳过节点与事件级 Hook；建议保持开启", true)
+            setting(card, "allow_client_method", "允许 addClient", "允许应用注册无障碍客户端")
+            setting(card, "system_app_whitelist", "系统应用白名单", "系统应用仅允许名单中的包")
+            setting(card, "block_system", "阻止系统组件读取", "对白名单模式下 android. 系统组件应用规则")
+            row(card, "应用名单", "搜索、分类与逐应用设置") { startActivity(Intent(this, AppsConfigActivity::class.java)) }
+        }
+        group("截屏与音频", "增强截屏需要将目标应用加入 LSPosed 作用域并重启应用。系统回调拦截适用于 Android 14 及以上。") { card ->
+            setting(card, "enable_android14_screenshot_blocker", "截屏回调防检测", "阻止系统向应用分发截图事件", true)
+            setting(card, "enable_enhanced_screenshot_blocker", "增强截屏防检测", "过滤名单应用的媒体查询与截图 URI 观察者")
+            setting(card, "block_third_party_communication_mode", "禁止应用切换通话模式", "普通应用回落至媒体模式，保留系统与蓝牙适配")
+            row(card, "申请目标应用作用域", "由框架显示授权界面") {
+                FrameworkTool.requestScope(ConfigData.blockApps.data.filter { it != packageName }) { toast(it) }
+            }
+        }
+        group("系统增强") { card ->
+            setting(card, "dpm_enabled", "设备策略 Hook", "调整设备所有者配置前置检查", true)
+            setting(card, "launcher_enabled", "ColorOS 最近任务锁", "解除锁定数量限制与默认锁判断", true)
+        }
+        group("显示与诊断") { card ->
+            val hidden = packageManager.getComponentEnabledSetting(alias) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            toggle(card, "隐藏桌面图标", "仍可从 LSPosed 模块设置进入", hidden) {
+                packageManager.setComponentEnabledSetting(alias, if (it) PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    else PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+            }
+            setting(card, "show_notice", "显示 Hook 日志与提示", "诊断日志及 Toast 已限流")
+            setting(card, "MothodMonitor_SW", "方法监视器", "记录无障碍调用；默认关闭")
+            row(card, "导出配置", "包含功能开关和应用名单") {
+                startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    type = "text/xml"; addCategory(Intent.CATEGORY_OPENABLE); putExtra(Intent.EXTRA_TITLE, "ZhangSystemHook.xml")
+                }, 100)
+            }
+            row(card, "导入配置", "兼容旧版名单 XML") {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE)
+                }, 101)
+            }
+        }
+        group("功能测试") { card ->
+            row(card, "重新检查无障碍") { runChecks() }
+            row(card, "通知测试") { SystemNotifier.sendUserMsg("ZhangSystemHook · API 102", this) }
+            row(card, "通话模式测试", "点按请求通信模式，再次点按恢复普通模式") {
+                runCatching {
+                    val audio = getSystemService(AudioManager::class.java)
+                    val request = if (audio.mode == AudioManager.MODE_IN_COMMUNICATION) AudioManager.MODE_NORMAL else AudioManager.MODE_IN_COMMUNICATION
+                    audio.mode = request
+                    testResult.text = "请求 mode=$request，实际 mode=${audio.mode}"
+                }.onFailure { testResult.text = "测试失败：${it.javaClass.simpleName}" }
+            }
+            row(card, "截屏回调测试", "保持此页前台，使用系统截屏") {
+                testResult.text = if (capture != null) "监听已注册，等待实际截屏" else "当前系统不支持或监听注册失败"
+            }
+            testResult = label("等待测试", 12, color = secondary).apply { setPadding(dp(16), dp(12), dp(16), dp(16)) }
+            card.addView(testResult)
+        }
+        group("无障碍检查") { card ->
+            checks = label("检查中…", 13, color = secondary).apply { setPadding(dp(16), dp(16), dp(16), dp(16)); setTextIsSelectable(true) }
+            card.addView(checks)
+        }
+        FrameworkTool.observe(frameworkChanged)
+        ConfigData.observe(configChanged)
+        refreshStatus()
     }
-
-    companion object {
-        private val systemVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) ${Build.DISPLAY}"
-        var isModuleValid = false
+    private fun setting(parent: LinearLayout, key: String, title: String, detail: String, default: Boolean = false) {
+        switches[key] = toggle(parent, title, detail, ConfigData.flag(key, default)) { ConfigData.setFlag(key, it) }
     }
-
-    override fun onCreate() {
-        binding.mainTextVersion.text = locale.moduleVersion(BuildConfig.VERSION_NAME)
-        binding.mainTextSystemVersion.text = locale.systemVersion(systemVersion)
-        binding.mgrAppsConfigsButton.setOnClickListener {
-            whenActivated {
-                navigate<AppsConfigActivity>()
-            }
+    private fun refreshSwitches() {
+        switches.forEach { (key, view) ->
+            val default = key in setOf("_enable_module", "high_performance_mode", "enable_android14_screenshot_blocker", "dpm_enabled", "launcher_enabled")
+            val checked = ConfigData.flag(key, default)
+            if (view.isChecked != checked) view.isChecked = checked
         }
-
-        // 隐藏桌面图标开关
-        binding.hideIconInLauncherSwitch.isChecked = isLauncherIconShowing.not()
-        binding.hideIconInLauncherSwitch.setOnCheckedChangeListener { button, isChecked ->
-            if (button.isPressed) hideOrShowLauncherIcon(isChecked)
+    }
+    private fun refreshStatus() {
+        val framework = FrameworkTool.service
+        status.text = when {
+            framework == null -> "框架未连接"
+            !FrameworkTool.configReady -> "框架已连接 · 配置同步失败"
+            else -> "${framework.frameworkName} · API ${framework.apiVersion}"
         }
-
-        //方法监视器开关
-        val MothodMonitor_SW = PrefsData("MothodMonitor_SW", false)
-        try {
-            binding.MethodMonitorSwitch.isChecked = ConfigData.getBoolean(MothodMonitor_SW)
-        } catch (e: Throwable) {
-            binding.MethodMonitorSwitch.isChecked = false
-        }
-        binding.MethodMonitorSwitch.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ConfigData.putBoolean(MothodMonitor_SW, isChecked)
-                if (isChecked) {
-                    SystemNotifier.sendUserMsg("启用方法监视器", button.context)
-                } else {
-                    SystemNotifier.sendUserMsg("关闭方法监视器", button.context)
-                }
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置方法监视器开关失败", button.context)
-            }
-        }
-
-
-        // 显示通知开关
-        val SHOW_NOTICE = PrefsData("show_notice", false)
-        try {
-            binding.showNoticeSwitch.isChecked = ConfigData.getBoolean(SHOW_NOTICE)
-        } catch (e: Throwable) {
-            binding.showNoticeSwitch.isChecked = false
-        }
-        binding.showNoticeSwitch.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ConfigData.putBoolean(SHOW_NOTICE, isChecked)
-                if (isChecked) {
-                    SystemNotifier.sendUserMsg("将显示日志", button.context)
-                } else {
-                    SystemNotifier.sendUserMsg("不显示日志", button.context)
-                }
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置通知开关失败", button.context)
-            }
-        }
-
-        // 无障碍防检测功能开关
-        val ACCESSIBILITY_HOOK_ENABLE = PrefsData("accessibility_hook_enable", false)
-        try {
-            binding.accessibilityHookEnable.isChecked = ConfigData.getBoolean(ACCESSIBILITY_HOOK_ENABLE)
-        } catch (e: Throwable) {
-            binding.accessibilityHookEnable.isChecked = false
-        }
-        binding.accessibilityHookEnable.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ConfigData.putBoolean(ACCESSIBILITY_HOOK_ENABLE, isChecked)
-                if (isChecked) {
-                    SystemNotifier.sendUserMsg("启用无障碍防检测功能", button.context)
-                } else {
-                    SystemNotifier.sendUserMsg("关闭无障碍防检测功能", button.context)
-                }
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置无障碍防检测功能开关失败", button.context)
-            }
-        }
-
-        // 无障碍高性能模式开关
-        val HIGH_PERFORMANCE_MODE = PrefsData("high_performance_mode", false)
-        try {
-            binding.HIGHPERFORMANCEMODESwitch.isChecked = ConfigData.getBoolean(HIGH_PERFORMANCE_MODE)
-        } catch (e: Throwable) {
-            binding.HIGHPERFORMANCEMODESwitch.isChecked = false
-        }
-        binding.HIGHPERFORMANCEMODESwitch.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ConfigData.putBoolean(HIGH_PERFORMANCE_MODE, isChecked)
-                if (isChecked) {
-                    SystemNotifier.sendUserMsg("启用无障碍高性能模式，部分Hook将关闭，重启生效。", button.context)
-                } else {
-                    SystemNotifier.sendUserMsg("关闭无障碍高性能模式，启用全部Hook", button.context)
-                }
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置无障碍高性能模式开关失败", button.context)
-            }
-        }
-
-        // 允许addClient开关
-        val ALLOW_ADDCLIENT_METHOD = PrefsData("allow_client_method", false)
-        try {
-            binding.AllowaddClientSwitch.isChecked = ConfigData.getBoolean(ALLOW_ADDCLIENT_METHOD)
-        } catch (e: Throwable) {
-            binding.AllowaddClientSwitch.isChecked = false
-        }
-        binding.AllowaddClientSwitch.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ConfigData.putBoolean(ALLOW_ADDCLIENT_METHOD, isChecked)
-                if (isChecked) {
-                    SystemNotifier.sendUserMsg("已允许AddClient方法。", button.context)
-                } else {
-                    SystemNotifier.sendUserMsg("已拒绝AddClient方法", button.context)
-                }
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置AddClient方法失败", button.context)
-            }
-        }
-
-        // 系统应用白名单模式开关
-        val SYSTEM_APP_WHITELIST = PrefsData("system_app_whitelist", false)
-        try {
-            binding.systemWhitelistSwitch2.isChecked = ConfigData.getBoolean(SYSTEM_APP_WHITELIST)
-        } catch (e: Throwable) {
-            binding.systemWhitelistSwitch2.isChecked = false
-        }
-        binding.systemWhitelistSwitch2.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ConfigData.putBoolean(SYSTEM_APP_WHITELIST, isChecked)
-                if (isChecked) {
-                    SystemNotifier.sendUserMsg("系统应用将使用白名单模式", button.context)
-                } else {
-                    SystemNotifier.sendUserMsg("关闭系统应用白名单模式", button.context)
-                }
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置系统应用白名单开关失败", button.context)
-            }
-        }
-
-        // 阻止系统组件式开关
-        val IS_HOOK_ANDROID_KERNEL = PrefsData("block_system", false)
-        try {
-            binding.hookAndroidKernel.isChecked = ConfigData.getBoolean(IS_HOOK_ANDROID_KERNEL)
-        } catch (e: Throwable) {
-            binding.hookAndroidKernel.isChecked = false
-        }
-        binding.hookAndroidKernel.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ConfigData.putBoolean(IS_HOOK_ANDROID_KERNEL, isChecked)
-                if (isChecked) {
-                    SystemNotifier.sendUserMsg("允许阻止系统组件获取无障碍", button.context)
-                } else {
-                    SystemNotifier.sendUserMsg("系统组件默认白名单模式", button.context)
-                }
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置系统组件开关失败", button.context)
-            }
-        }
-
-        binding.blockScreenCaptureDetectionSwitch.isChecked = ScreenshotConfig.enableAndroid14Blocker
-        binding.blockScreenCaptureDetectionSwitch.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ScreenshotConfig.enableAndroid14Blocker = isChecked
-                SystemNotifier.sendUserMsg(
-                    if (isChecked) "已启用 Android 14 截图检测拦截，重启后生效"
-                    else "已关闭 Android 14 截图检测拦截，重启后生效",
-                    button.context
-                )
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置截图检测开关失败", button.context)
-            }
-        }
-
-        binding.enhancedScreenshotBlockerSwitch.isChecked = ScreenshotConfig.enableEnhancedBlocker
-        binding.enhancedScreenshotBlockerSwitch.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ScreenshotConfig.enableEnhancedBlocker = isChecked
-                SystemNotifier.sendUserMsg(
-                    if (isChecked) "已启用增强截屏防检测，重启后生效"
-                    else "已关闭增强截屏防检测，重启后生效",
-                    button.context
-                )
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置增强截屏防检测开关失败", button.context)
-            }
-        }
-
-        binding.blockCommunicationModeSwitch.isChecked =
-            ConfigData.getBoolean(ConfigData.BLOCK_THIRD_PARTY_COMMUNICATION_MODE)
-        binding.blockCommunicationModeSwitch.setOnCheckedChangeListener { button, isChecked ->
-            try {
-                ConfigData.putBoolean(ConfigData.BLOCK_THIRD_PARTY_COMMUNICATION_MODE, isChecked)
-                SystemNotifier.sendUserMsg(
-                    if (isChecked) "已禁止普通应用切换通话模式，重启后生效"
-                    else "已恢复普通应用切换通话模式，重启后生效",
-                    button.context
-                )
-            } catch (e: Throwable) {
-                SystemNotifier.sendUserMsg("设置通话模式开关失败", button.context)
-            }
-        }
-
-        // 测试通知按钮
-        binding.buttonNoticeTest.setOnClickListener {
-            SystemNotifier.sendUserMsg("ZhangSystemHook", it.context)
-        }
-
-        binding.buttonCommunicationModeTest.setOnClickListener {
-            runCatching {
-                val audioManager = getSystemService(AudioManager::class.java)
-                audioTestInCommunicationMode = !audioTestInCommunicationMode
-                audioManager.mode = if (audioTestInCommunicationMode) AudioManager.MODE_IN_COMMUNICATION else AudioManager.MODE_NORMAL
-                binding.testResultText.text = getString(if (audioTestInCommunicationMode) R.string.test_communication_entered else R.string.test_communication_released)
-                Log.i("ZhangSystemHookTest", "module app requested mode=${audioManager.mode}")
-            }.onFailure {
-                binding.testResultText.text = getString(R.string.test_failed, it.javaClass.simpleName)
-                Log.e("ZhangSystemHookTest", "module app setMode failed", it)
-            }
-        }
-
-        binding.buttonScreenCaptureTest.setOnClickListener {
-            binding.testResultText.text = getString(
-                if (screenCaptureCallbackRegistered) {
-                    R.string.test_screen_capture_armed
-                } else {
-                    R.string.test_screen_capture_stopped
-                }
+        status.setTextColor(if (FrameworkTool.configReady) 0xFF34C759.toInt() else secondary)
+    }
+    private fun runChecks() {
+        worker.execute {
+            val manager = getSystemService(AccessibilityManager::class.java)
+            val tests = listOf<Pair<String, () -> Any?>>(
+                "isEnabled" to { manager.isEnabled },
+                "getEnabledAccessibilityServiceList" to { manager.getEnabledAccessibilityServiceList(-1).map { it.id } },
+                "getAccessibilityServiceList" to { @Suppress("DEPRECATION") manager.accessibilityServiceList.map { it.packageName } },
+                "isTouchExplorationEnabled" to { manager.isTouchExplorationEnabled },
+                "ACCESSIBILITY_ENABLED" to { Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) },
+                "ENABLED_ACCESSIBILITY_SERVICES" to { Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) }
             )
-            Log.i("ScreenshotBlocker", "[App] ScreenCaptureCallback status=$screenCaptureCallbackRegistered")
+            val result = tests.joinToString("\n\n") { (name, read) ->
+                "$name\n${runCatching { read()?.toString()?.ifEmpty { "未检出" } ?: "未检出" }.getOrElse { "读取失败：${it.javaClass.simpleName}" }}"
+            }
+            runOnUiThread { if (!isDestroyed) checks.text = result }
         }
     }
-
+    override fun onResume() { super.onResume(); refreshStatus(); runChecks() }
     override fun onStart() {
         super.onStart()
-        runCatching {
-            registerScreenCaptureCallback(mainExecutor, screenCaptureCallback)
-            screenCaptureCallbackRegistered = true
-            binding.testResultText.text = getString(R.string.test_screen_capture_armed)
-            Log.i("ScreenshotBlocker", "[App] ScreenCaptureCallback registered in onStart")
-        }.onFailure {
-            screenCaptureCallbackRegistered = false
-            Log.e("ScreenshotBlocker", "[App] ScreenCaptureCallback registration failed", it)
+        if (Build.VERSION.SDK_INT >= 34) runCatching {
+            capture = CaptureWatcher(this) { testResult.text = "收到系统截图回调" }
+        }.onFailure { testResult.text = "截图监听注册失败：${it.javaClass.simpleName}" }
+    }
+    override fun onStop() { capture?.close(); capture = null; super.onStop() }
+    override fun onDestroy() {
+        FrameworkTool.removeObserver(frameworkChanged); ConfigData.removeObserver(configChanged)
+        worker.shutdownNow()
+        super.onDestroy()
+    }
+    @Deprecated("Activity result API retained for native Activity")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        worker.execute {
+            val success = if (requestCode == 100) ConfigData.exportConfig(this, uri) else ConfigData.importConfig(this, uri)
+            toast(if (success) "配置${if (requestCode == 100) "导出" else "导入"}成功" else "配置操作失败")
         }
     }
-
-    override fun onStop() {
-        if (screenCaptureCallbackRegistered) {
-            runCatching {
-                unregisterScreenCaptureCallback(screenCaptureCallback)
-                Log.i("ScreenshotBlocker", "[App] ScreenCaptureCallback unregistered in onStop")
-            }.onFailure {
-                Log.e("ScreenshotBlocker", "[App] ScreenCaptureCallback unregister failed", it)
-            }
-            screenCaptureCallbackRegistered = false
-        }
-        super.onStop()
-    }
-
-    private fun refreshModuleStatus() {
-        binding.mainLinStatus.setBackgroundResource(
-            when {
-                YukiHookAPI.Status.isXposedModuleActive && isModuleValid.not() -> R.drawable.bg_yellow_round
-                YukiHookAPI.Status.isXposedModuleActive -> R.drawable.bg_green_round
-                else -> R.drawable.bg_dark_round
-            }
-        )
-        binding.mainImgStatus.setImageResource(
-            when {
-                YukiHookAPI.Status.isXposedModuleActive -> R.mipmap.ic_success
-                else -> R.mipmap.ic_warn
-            }
-        )
-        binding.mainTextStatus.text = when {
-            YukiHookAPI.Status.isXposedModuleActive && isModuleValid.not() -> locale.moduleNotFullyActivated
-            YukiHookAPI.Status.isXposedModuleActive -> locale.moduleIsActivated
-            else -> locale.moduleNotActivated
-        }
-        binding.mainTextApiWay.isVisible = YukiHookAPI.Status.isXposedModuleActive
-        binding.mainTextApiWay.text = "Activated by ${YukiHookAPI.Status.Executor.name} API ${YukiHookAPI.Status.Executor.apiLevel}"
-    }
-
-    private inline fun whenActivated(callback: () -> Unit) {
-        if (YukiHookAPI.Status.isXposedModuleActive.not()) toast(locale.moduleNotActivated)
-        else if (isModuleValid.not()) toast(locale.moduleNotFullyActivated)
-        callback()
-    }
-    @SuppressLint("PrivateApi")
-    private fun updateAllHookCheckResults(): String {
-        val accessibilityManager = getSystemService(AccessibilityManager::class.java)
-        val contentResolver = contentResolver
-        val results = mutableListOf<String>()
-
-        // 1. AccessibilityManager.isEnabled()
-        results.add(try {
-            val isEnabled = accessibilityManager.isEnabled
-            "1. AccessibilityManager.isEnabled(): ${if (isEnabled) "true" else "未检出"}"
-        } catch (e: Exception) {
-            "1. AccessibilityManager.isEnabled(): 未检出"
-        })
-
-        // 2. AccessibilityManager.getEnabledAccessibilityServiceList(int feedbackType)
-        results.add(try {
-            val services = accessibilityManager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-            if (services.isNotEmpty()) "2. getEnabledAccessibilityServiceList(): ${services.map { it.id }.sorted().joinToString(", ")}"
-            else "2. getEnabledAccessibilityServiceList(): 未检出"
-        } catch (e: Exception) {
-            "2. getEnabledAccessibilityServiceList(): 未检出"
-        })
-
-        // 3. AccessibilityManager.getAccessibilityServiceList()
-        results.add(try {
-            val services = accessibilityManager.getAccessibilityServiceList()
-            if (services.isNotEmpty()) "3. getAccessibilityServiceList(): ${services.map { it.packageName }.sorted().joinToString(", ")}"
-            else "3. getAccessibilityServiceList(): 未检出"
-        } catch (e: Exception) {
-            "3. getAccessibilityServiceList(): 未检出"
-        })
-
-        // 4. AccessibilityManager.isTouchExplorationEnabled()
-        results.add(try {
-            val method = AccessibilityManager::class.java.getMethod("isTouchExplorationEnabled")
-            val isEnabled = method.invoke(accessibilityManager) as Boolean
-            "4. isTouchExplorationEnabled(): ${if (isEnabled) "true" else "禁用"}"
-        } catch (e: Exception) {
-            "4. isTouchExplorationEnabled(): 未检出"
-        })
-
-
-        // 5. Settings.Secure.getInt(ACCESSIBILITY_ENABLED)
-        results.add(try {
-            val enabled = Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED) != 0
-            "5. Settings.ACCESSIBILITY_ENABLED: ${if (enabled) "true" else "未检出"}"
-        } catch (e: Exception) {
-            "5. Settings.ACCESSIBILITY_ENABLED: 未检出"
-        })
-
-        // 6. Settings.Secure.getString(ENABLED_ACCESSIBILITY_SERVICES)
-        results.add(try {
-            val services = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            if (!services.isNullOrBlank()) "6. Settings.ENABLED_SERVICES: ${services.split(':').sorted().joinToString(", ")}"
-            else "6. Settings.ENABLED_SERVICES: 未检出"
-        } catch (e: Exception) {
-            "6. Settings.ENABLED_SERVICES: 未检出"
-        })
-
-        results.add("更多检测检测状态略")
-        return results.joinToString("\n\n")
-    }
-
-    override fun onResume() {
-        super.onResume()
-        refreshModuleStatus()
-        FrameworkTool.checkingActivated(context = this) { isValid ->
-            isModuleValid = isValid
-            refreshModuleStatus()
-        }
-        // 所有结果显示在serviceCheckResult
-        binding.serviceCheckResult.text = updateAllHookCheckResults()
+    @android.annotation.TargetApi(34)
+    private class CaptureWatcher(private val activity: Activity, callback: () -> Unit) : AutoCloseable {
+        private val listener = Activity.ScreenCaptureCallback { callback() }
+        init { activity.registerScreenCaptureCallback(activity.mainExecutor, listener) }
+        override fun close() { activity.unregisterScreenCaptureCallback(listener) }
     }
 }

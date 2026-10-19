@@ -11,6 +11,7 @@
     <application
         android:name=".application.DefaultApplication"
         android:allowBackup="true"
+        android:description="@string/xposed_desc"
         android:icon="@mipmap/logo"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -20,22 +21,6 @@
         <activity
             android:name=".ui.activity.AppsConfigActivity"
             android:exported="false" />
-
-        <meta-data
-            android:name="xposedmodule"
-            android:value="true" />
-        <meta-data
-            android:name="xposedsharedprefs"
-            android:value="true" />
-        <meta-data
-            android:name="xposedscope"
-            android:resource="@array/module_scope" />
-        <meta-data
-            android:name="xposeddescription"
-            android:value="@string/xposed_desc" />
-        <meta-data
-            android:name="xposedminversion"
-            android:value="93" />
 
         <activity
             android:name=".ui.activity.MainActivity"

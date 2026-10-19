@@ -1,45 +1,46 @@
-/*
- * This file is created by fankes on 2022/5/12.
- */
 package io.github.fairyxh.ZhangSystemHook.utils.tool
 
-import android.content.Context
-import com.highcapable.yukihookapi.hook.factory.dataChannel
-import com.highcapable.yukihookapi.hook.param.PackageParam
-import com.highcapable.yukihookapi.hook.xposed.channel.data.ChannelData
-import io.github.fairyxh.ZhangSystemHook.bean.AppFiltersBean
-import io.github.fairyxh.ZhangSystemHook.bean.AppInfoBean
-import io.github.fairyxh.ZhangSystemHook.utils.PackageName
-
+import android.util.Log
+import io.github.fairyxh.ZhangSystemHook.core.HookRuntime
+import io.github.fairyxh.ZhangSystemHook.data.ConfigData
+import io.github.libxposed.service.XposedService
+import io.github.libxposed.service.XposedServiceHelper
+import java.util.concurrent.CopyOnWriteArraySet
 
 object FrameworkTool {
-
-    private const val CALL_REFRESH_HOST_PREFS_DATA = "call_refresh_host_prefs_data"
-
-    private val CALL_APP_LIST_DATA_GET_RESULT = ChannelData<List<AppInfoBean>>("call_app_info_list_data_get_result")
-    private val CALL_APP_LIST_DATA_GET = ChannelData<AppFiltersBean>("call_app_info_list_data_get")
-
-    object Host {
-
-        private var instance: PackageParam? = null
-
-        fun with(instance: PackageParam, initiate: Host.() -> Unit) = apply { this.instance = instance }.apply(initiate)
-
-        fun onRefreshFrameworkPrefsData(callback: () -> Unit) = instance?.dataChannel?.wait(CALL_REFRESH_HOST_PREFS_DATA) { callback() }
-
-        fun onPushAppListData(result: (AppFiltersBean) -> List<AppInfoBean>) {
-            instance?.dataChannel?.with { wait(CALL_APP_LIST_DATA_GET) { put(CALL_APP_LIST_DATA_GET_RESULT, result(it)) } }
-        }
+    @Volatile var service: XposedService? = null
+        private set
+    @Volatile var configReady = false
+        private set
+    private val listeners = CopyOnWriteArraySet<() -> Unit>()
+    fun observe(callback: () -> Unit) { listeners.add(callback) }
+    fun removeObserver(callback: () -> Unit) { listeners.remove(callback) }
+    fun connect() {
+        XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
+            override fun onServiceBind(service: XposedService) {
+                FrameworkTool.service = service
+                configReady = runCatching {
+                    check(service.apiVersion >= 102)
+                    ConfigData.connect(service.getRemotePreferences(ConfigData.GROUP))
+                    true
+                }.getOrElse { HookRuntime.log(Log.ERROR, "Framework", "Configuration service unavailable", it); false }
+                listeners.forEach { it() }
+            }
+            override fun onServiceDied(service: XposedService) {
+                FrameworkTool.service = null
+                configReady = false
+                ConfigData.disconnect()
+                listeners.forEach { it() }
+            }
+        })
     }
-
-    fun checkingActivated(context: Context, result: (Boolean) -> Unit) = context.dataChannel(PackageName.SYSTEM_FRAMEWORK).checkingVersionEquals(result = result)
-
-    fun refreshFrameworkPrefsData(context: Context) = context.dataChannel(PackageName.SYSTEM_FRAMEWORK).put(CALL_REFRESH_HOST_PREFS_DATA)
-
-    fun fetchAppListData(context: Context, appFilters: AppFiltersBean, result: (List<AppInfoBean>) -> Unit) {
-        context.dataChannel(PackageName.SYSTEM_FRAMEWORK).with {
-            wait(CALL_APP_LIST_DATA_GET_RESULT) { result(it) }
-            put(CALL_APP_LIST_DATA_GET, appFilters)
-        }
+    fun requestScope(packages: List<String>, callback: (String) -> Unit) {
+        val framework = service ?: return callback("框架未连接，请先在 LSPosed 中启用模块")
+        runCatching {
+            framework.requestScope(packages, object : XposedService.OnScopeEventListener {
+                override fun onScopeRequestApproved(approved: List<String>) = callback("作用域已更新，请重启目标进程")
+                override fun onScopeRequestFailed(message: String) = callback(message)
+            })
+        }.onFailure { callback(it.message ?: "作用域请求失败") }
     }
 }

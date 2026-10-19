@@ -1,6 +1,9 @@
 <resources>
     <!-- Base application theme. -->
-    <style name="Theme.AppDefault" parent="Theme.Material3.DayNight">
+    <style name="Theme.AppDefault" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#34C759</item>
+        <item name="android:windowLightStatusBar">false</item>
 
     </style>
 </resources>

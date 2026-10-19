@@ -11,14 +11,15 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Process
 import android.telephony.TelephonyManager
-import com.highcapable.yukihookapi.hook.entity.YukiBaseHooker
+import io.github.fairyxh.ZhangSystemHook.core.BaseHooker
+import io.github.fairyxh.ZhangSystemHook.core.HookRuntime
 import io.github.fairyxh.ZhangSystemHook.data.ConfigData
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /** 在 system_server 的 AudioService 中：开关开启时禁止所有应用进入通话/通信模式、使用听筒，音频强制到扬声器/媒体音量。 */
-object AudioCommunicationModeHooker : YukiBaseHooker() {
+object AudioCommunicationModeHooker : BaseHooker() {
     private const val TAG = "AudioBlocker"
     private const val FORCE_NORMAL_DELAY_MS = 600L
     private val forceNormalPending = AtomicBoolean(false)
@@ -32,7 +33,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
     }
 
     override fun onHook() {
-        HookLog.i(TAG, "[Audio] installing AudioService hooks")
+        HookLog.i(TAG) { "[Audio] installing AudioService hooks" }
         val audioService = runCatching {
             "com.android.server.audio.AudioService".toClass()
         }.getOrElse {
@@ -52,7 +53,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         hookVolumeAliasToMusic(audioService)
         hookPhoneState()
         hookEarpieceDisable()
-        HookLog.i(TAG, "[Audio] AudioService hook scan completed")
+        HookLog.i(TAG) { "[Audio] AudioService hook scan completed" }
     }
 
     private fun hookMethods(clazz: Class<*>, methodName: String) {
@@ -66,11 +67,10 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         val decision = decide(methodName, instance, args)
                         val normalizeMode = methodName == "setMode" && decision.block
-                        HookLog.i(
-                            "AudioMode",
-                            "$methodName${method.parameterTypes.contentToString()} uid=${decision.uid} " +
+                        HookLog.i("AudioMode") { "$methodName${method.parameterTypes.contentToString()} uid=${decision.uid} " +
                                 "pkg=${decision.packageName} args=${args.contentToString()} " +
                                 "enabled=${decision.enabled} privileged=${decision.privileged} " +
                                 "state=${decision.state} " +
@@ -78,8 +78,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                                     normalizeMode -> "FORCE_MODE_NORMAL"
                                     decision.block -> "BLOCK"
                                     else -> "ALLOW"
-                                }}"
-                        )
+                                }}" }
                         if (normalizeMode) {
                             val modeIndex = firstIntParameterIndex(method)
                             if (modeIndex >= 0) {
@@ -92,7 +91,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                         }
                     }
                 }
-                HookLog.i(TAG, "[Audio] installed $methodName${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[Audio] installed $methodName${method.parameterTypes.contentToString()}" }
             }
         }.onFailure { HookLog.e(TAG, "[Audio] failed to hook $methodName", it) }
     }
@@ -118,6 +117,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         val modeIndex = firstIntParameterIndex(method)
                         val requested = if (modeIndex >= 0) args.getOrNull(modeIndex) as? Int else null
                         // 仅拦截第三方 app 持有的通话模式；Telephony 等系统模式放行（真实电话不受影响）
@@ -125,18 +125,15 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                             isAppOwnedCallMode(instance)
                         ) {
                             args[modeIndex] = AudioManager.MODE_NORMAL
-                            HookLog.i(
-                                "AudioMode",
-                                "[ModeCommit] FORCE_MODE_NORMAL ${method.name}${method.parameterTypes.contentToString()} " +
-                                    "requested=$requested"
-                            )
+                            HookLog.i("AudioMode") { "[ModeCommit] FORCE_MODE_NORMAL ${method.name}${method.parameterTypes.contentToString()} " +
+                                    "requested=$requested" }
                         }
                     }
                     after {
                         forceNormalIfNeeded(instance, findContext(instance))
                     }
                 }
-                HookLog.i(TAG, "[ModeCommit] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[ModeCommit] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[ModeCommit] hook failed: ${method.toGenericString()}", it)
             }
@@ -151,9 +148,10 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         val mode = readMode(audioService) ?: return
         if (!isCallMode(mode)) return
         if (!forceNormalPending.compareAndSet(false, true)) return
-        HookLog.i(TAG, "[ForceNormal] mode=$mode callState=${readCallState(context)} scheduling setMode(MODE_NORMAL)")
+        HookLog.i(TAG) { "[ForceNormal] mode=$mode callState=${readCallState(context)} scheduling setMode(MODE_NORMAL)" }
         correctionHandler.postDelayed({
             forceNormalPending.set(false)
+            if (!communicationModeBlocked() || !isAppOwnedCallMode(audioService) || readMode(audioService)?.let(::isCallMode) != true) return@postDelayed
             runCatching {
                 val method = setModeMethod(audioService) ?: error("setMode not found")
                 val binder = readModeOwnerBinder(audioService) ?: Binder()
@@ -163,7 +161,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 }
                 method.isAccessible = true
                 method.invoke(audioService, *invokeArgs)
-                HookLog.i(TAG, "[ForceNormal] invoked ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[ForceNormal] invoked ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[ForceNormal] correction failed", it)
             }
@@ -191,21 +189,19 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         val modeIndex = firstIntParameterIndex(method)
                         val requested = if (modeIndex >= 0) args.getOrNull(modeIndex) as? Int else null
                         if (requested != null && isCallMode(requested) && communicationModeBlocked() &&
                             isAppOwnedCallMode(instance)
                         ) {
                             args[modeIndex] = AudioManager.MODE_NORMAL
-                            HookLog.i(
-                                "AudioMode",
-                                "[OriginalMode] FORCE_MODE_NORMAL ${method.name}${method.parameterTypes.contentToString()} " +
-                                    "requested=$requested"
-                            )
+                            HookLog.i("AudioMode") { "[OriginalMode] FORCE_MODE_NORMAL ${method.name}${method.parameterTypes.contentToString()} " +
+                                    "requested=$requested" }
                         }
                     }
                 }
-                HookLog.i(TAG, "[OriginalMode] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[OriginalMode] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[OriginalMode] hook failed: ${method.toGenericString()}", it)
             }
@@ -240,6 +236,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         if (communicationModeBlocked()) {
                             val device = args.lastOrNull()
                             val deviceType = device?.let { invokeInt(it, "getType") }
@@ -251,17 +248,14 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                                 }.getOrNull()
                                 if (speakerAttrs != null) {
                                     args[args.size - 1] = speakerAttrs
-                                    HookLog.i(
-                                        TAG,
-                                        "[Strategy] REWRITE_EARPIECE_TO_SPEAKER ${method.name}${method.parameterTypes.contentToString()} " +
-                                            "args=${args.contentToString()}"
-                                    )
+                                    HookLog.i(TAG) { "[Strategy] REWRITE_EARPIECE_TO_SPEAKER ${method.name}${method.parameterTypes.contentToString()} " +
+                                            "args=${args.contentToString()}" }
                                 }
                             }
                         }
                     }
                 }
-                HookLog.i(TAG, "[Strategy] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[Strategy] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[Strategy] hook failed: ${method.toGenericString()}", it)
             }
@@ -290,6 +284,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         if (communicationModeBlocked() && args.getOrNull(1) == false) {
                             val context = findContext(instance)
                             val uid = Binder.getCallingUid()
@@ -302,23 +297,17 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                             // 系统/特权调用与蓝牙耳机场景放行，避免切回扬声器打断蓝牙音频
                             if (!privileged && !systemApp && !bluetoothActive) {
                                 args[1] = true
-                                HookLog.i(
-                                    TAG,
-                                    "[Speaker] FORCE_SPEAKER_ON ${method.name}${method.parameterTypes.contentToString()} " +
-                                        "args=${args.contentToString()}"
-                                )
+                                HookLog.i(TAG) { "[Speaker] FORCE_SPEAKER_ON ${method.name}${method.parameterTypes.contentToString()} " +
+                                        "args=${args.contentToString()}" }
                             } else {
-                                HookLog.i(
-                                    TAG,
-                                    "[Speaker] ALLOW off uid=$uid pkg=${resolvePackageName(context, uid)} " +
+                                HookLog.i(TAG) { "[Speaker] ALLOW off uid=$uid pkg=${resolvePackageName(context, uid)} " +
                                         "privileged=$privileged systemApp=$systemApp bluetooth=$bluetoothActive " +
-                                        "${method.name}${method.parameterTypes.contentToString()}"
-                                )
+                                        "${method.name}${method.parameterTypes.contentToString()}" }
                             }
                         }
                     }
                 }
-                HookLog.i(TAG, "[Speaker] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[Speaker] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[Speaker] hook failed: ${method.toGenericString()}", it)
             }
@@ -349,22 +338,20 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         // setPhoneState 是 framework 内部提交点，正常只有系统进程调用；
                         // 仅防御第三方应用反射调用，系统（Telephony）真实电话不受影响
                         if (communicationModeBlocked() && Binder.getCallingUid() >= Process.FIRST_APPLICATION_UID) {
                             val state = firstInt(args)
                             if (state != null && isCallMode(state)) {
                                 result = -1
-                                HookLog.i(
-                                    TAG,
-                                    "[PhoneState] BLOCK_HAL_CALL_MODE ${method.name}${method.parameterTypes.contentToString()} " +
-                                        "args=${args.contentToString()}"
-                                )
+                                HookLog.i(TAG) { "[PhoneState] BLOCK_HAL_CALL_MODE ${method.name}${method.parameterTypes.contentToString()} " +
+                                        "args=${args.contentToString()}" }
                             }
                         }
                     }
                 }
-                HookLog.i(TAG, "[PhoneState] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[PhoneState] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[PhoneState] hook failed: ${method.toGenericString()}", it)
             }
@@ -398,13 +385,11 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         rewriteCommunicationDevice(instance, method, args)
                     }
                 }
-                HookLog.i(
-                    TAG,
-                    "[CommunicationDevice] installed ${method.name}${method.parameterTypes.contentToString()}"
-                )
+                HookLog.i(TAG) { "[CommunicationDevice] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[CommunicationDevice] hook failed: ${method.toGenericString()}", it)
             }
@@ -450,57 +435,39 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
             }
             val devices = audioManager.availableCommunicationDevices
             devices.forEach { device ->
-                HookLog.i(
-                    TAG,
-                    "[CommunicationDevice] available deviceId=${device.id} type=${device.type} " +
-                        "productName=${device.productName} address=${device.address} isSource=${device.isSource}"
-                )
+                HookLog.i(TAG) { "[CommunicationDevice] available deviceId=${device.id} type=${device.type} " +
+                        "productName=${device.productName} address=${device.address} isSource=${device.isSource}" }
             }
             val resolvedDevice = if (requestedDeviceId == 0) {
                 audioManager.communicationDevice
             } else {
                 devices.firstOrNull { it.id == requestedDeviceId }
             }
-            HookLog.i(
-                TAG,
-                "[CommunicationDevice] request uid=$uid pkg=$packageName privileged=$privileged " +
+            HookLog.i(TAG) { "[CommunicationDevice] request uid=$uid pkg=$packageName privileged=$privileged " +
                     "systemApp=$systemApp enabled=$enabled requestedDeviceId=$requestedDeviceId " +
                     "resolvedDeviceId=${resolvedDevice?.id} resolvedType=${resolvedDevice?.type} " +
-                    "address=${resolvedDevice?.address} isSource=${resolvedDevice?.isSource}"
-            )
+                    "address=${resolvedDevice?.address} isSource=${resolvedDevice?.isSource}" }
             if (!enabled) {
-                HookLog.i(
-                    TAG,
-                    "[CommunicationDevice] ALLOW switch off uid=$uid pkg=$packageName " +
-                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type}"
-                )
+                HookLog.i(TAG) { "[CommunicationDevice] ALLOW switch off uid=$uid pkg=$packageName " +
+                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type}" }
                 return
             }
             // 系统/特权调用（SystemUI 设备选择、蓝牙服务）放行，用户主动切换蓝牙/耳机不受干扰
             if (privileged || systemApp) {
-                HookLog.i(
-                    TAG,
-                    "[CommunicationDevice] ALLOW system/privileged uid=$uid pkg=$packageName " +
-                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type}"
-                )
+                HookLog.i(TAG) { "[CommunicationDevice] ALLOW system/privileged uid=$uid pkg=$packageName " +
+                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type}" }
                 return
             }
             // 默认路由（deviceId=0）交给系统决策，蓝牙自动连接后默认路由不再被改写成扬声器
             if (requestedDeviceId == 0) {
-                HookLog.i(
-                    TAG,
-                    "[CommunicationDevice] ALLOW default routing uid=$uid pkg=$packageName " +
-                        "resolvedType=${resolvedDevice?.type}"
-                )
+                HookLog.i(TAG) { "[CommunicationDevice] ALLOW default routing uid=$uid pkg=$packageName " +
+                        "resolvedType=${resolvedDevice?.type}" }
                 return
             }
             // 蓝牙耳机是用户明确使用的设备，放行
             if (resolvedDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-                HookLog.i(
-                    TAG,
-                    "[CommunicationDevice] ALLOW bluetooth uid=$uid pkg=$packageName " +
-                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type}"
-                )
+                HookLog.i(TAG) { "[CommunicationDevice] ALLOW bluetooth uid=$uid pkg=$packageName " +
+                        "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type}" }
                 return
             }
             val speaker = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
@@ -513,21 +480,15 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 return
             }
             if (requestedDeviceId != 0 && resolvedDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                HookLog.i(
-                    TAG,
-                    "[CommunicationDevice] ALLOW already speaker uid=$uid pkg=$packageName " +
-                        "requestedDeviceId=$requestedDeviceId speakerId=${speaker.id}"
-                )
+                HookLog.i(TAG) { "[CommunicationDevice] ALLOW already speaker uid=$uid pkg=$packageName " +
+                        "requestedDeviceId=$requestedDeviceId speakerId=${speaker.id}" }
                 return
             }
             args[1] = speaker.id
-            HookLog.i(
-                TAG,
-                "[CommunicationDevice] REWRITE_TO_SPEAKER uid=$uid pkg=$packageName " +
+            HookLog.i(TAG) { "[CommunicationDevice] REWRITE_TO_SPEAKER uid=$uid pkg=$packageName " +
                     "requestedDeviceId=$requestedDeviceId resolvedType=${resolvedDevice?.type} " +
                     "speakerId=${speaker.id} speakerType=${speaker.type} " +
-                    "speakerAddress=${speaker.address} speakerIsSource=${speaker.isSource}"
-            )
+                    "speakerAddress=${speaker.address} speakerIsSource=${speaker.isSource}" }
         }.onFailure {
             HookLog.e(
                 TAG,
@@ -555,19 +516,13 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
             return
         }
         if (!enabled || requested.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-            HookLog.i(
-                TAG,
-                "[CommunicationDevice] ALLOW uid=$uid pkg=$packageName requestedType=${requested.type} enabled=$enabled"
-            )
+            HookLog.i(TAG) { "[CommunicationDevice] ALLOW uid=$uid pkg=$packageName requestedType=${requested.type} enabled=$enabled" }
             return
         }
         // 系统/特权调用与蓝牙设备放行，仅第三方明确请求听筒等设备时强制扬声器
         if (privileged || systemApp || requested.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-            HookLog.i(
-                TAG,
-                "[CommunicationDevice] ALLOW system/privileged/bluetooth uid=$uid pkg=$packageName " +
-                    "requestedType=${requested.type} privileged=$privileged systemApp=$systemApp"
-            )
+            HookLog.i(TAG) { "[CommunicationDevice] ALLOW system/privileged/bluetooth uid=$uid pkg=$packageName " +
+                    "requestedType=${requested.type} privileged=$privileged systemApp=$systemApp" }
             return
         }
         runCatching {
@@ -582,11 +537,8 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 return
             }
             args[1] = speaker
-            HookLog.i(
-                TAG,
-                "[CommunicationDevice] REWRITE_TO_SPEAKER(INFO) uid=$uid pkg=$packageName " +
-                    "requestedType=${requested.type} speakerId=${speaker.id} speakerType=${speaker.type}"
-            )
+            HookLog.i(TAG) { "[CommunicationDevice] REWRITE_TO_SPEAKER(INFO) uid=$uid pkg=$packageName " +
+                    "requestedType=${requested.type} speakerId=${speaker.id} speakerType=${speaker.type}" }
         }.onFailure {
             HookLog.e(TAG, "[CommunicationDevice] ALLOW route inspection failed (info) uid=$uid pkg=$packageName", it)
         }
@@ -605,6 +557,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         val enabled = communicationModeBlocked()
                         val streamIndex = volumeStreamParameterIndex(method, args)
                         if (streamIndex != null) {
@@ -622,13 +575,10 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                             val voiceCallSelected = requestedStream == AudioManager.STREAM_VOICE_CALL ||
                                 activeStream == AudioManager.STREAM_VOICE_CALL
                             val shouldRewrite = enabled && (communicationMode || voiceCallSelected)
-                            HookLog.i(
-                                "AudioMode",
-                                "${method.name} args=${args.contentToString()} uid=$uid " +
+                            HookLog.i("AudioMode") { "${method.name} args=${args.contentToString()} uid=$uid " +
                                     "pkg=$packageName mode=$mode requestedStream=$requestedStream " +
                                     "streamArg=$streamIndex activeStream=$activeStream " +
-                                    "decision=${if (shouldRewrite) "REWRITE_TO_MUSIC" else "ALLOW"}"
-                            )
+                                    "decision=${if (shouldRewrite) "REWRITE_TO_MUSIC" else "ALLOW"}" }
                             if (shouldRewrite && requestedStream != AudioManager.STREAM_MUSIC) {
                                 args[streamIndex] = AudioManager.STREAM_MUSIC
                             }
@@ -647,7 +597,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                         }
                     }
                 }
-                HookLog.i(TAG, "[Audio] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[Audio] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }
         }.onFailure { HookLog.e(TAG, "[Audio] failed to hook adjustStreamVolume family", it) }
     }
@@ -675,6 +625,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         if (communicationModeBlocked() && !syncingVolumeAlias.get()) {
                             val stream = args.getOrNull(0) as? Int
                             if (stream != null && isCallVolumeStream(stream)) {
@@ -685,21 +636,15 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                                     // 别名会把 VOICE_CALL/SCO 设置放大成媒体音量，配合音量限制时媒体音量会被
                                     // 突然抬到限制值（微信语音/高德导航复现）；放行也避免 get/getMax 别名污染
                                     // 其他模块对真实通话流最大值的缓存。
-                                    HookLog.i(
-                                        "AudioMode",
-                                        "[VolumeAlias] ALLOW_SYSTEM_INTERNAL " +
+                                    HookLog.i("AudioMode") { "[VolumeAlias] ALLOW_SYSTEM_INTERNAL " +
                                             "${method.name}${method.parameterTypes.contentToString()} " +
-                                            "stream=$stream uid=$uid"
-                                    )
+                                            "stream=$stream uid=$uid" }
                                 } else if (index == null) {
                                     // App 读取通话/SCO 音量：别名到媒体流，让 App 音量 UI 显示媒体音量
                                     args[0] = AudioManager.STREAM_MUSIC
-                                    HookLog.i(
-                                        "AudioMode",
-                                        "[VolumeAlias] READ_AS_MUSIC " +
+                                    HookLog.i("AudioMode") { "[VolumeAlias] READ_AS_MUSIC " +
                                             "${method.name}${method.parameterTypes.contentToString()} " +
-                                            "stream=$stream uid=$uid"
-                                    )
+                                            "stream=$stream uid=$uid" }
                                 } else {
                                     // App 显式设置通话/SCO 流：通信音频强制按媒体音量播放。
                                     // 旧逻辑把通话档位等比放大成媒体档位（如 setStreamVolume(VOICE_CALL, 9)
@@ -749,12 +694,9 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                                             val expected =
                                                 scaleIndex(currentMusic, 0, cachedMusicMaxVolume, 1, fromMax)
                                             args[1] = expected
-                                            HookLog.i(
-                                                "AudioMode",
-                                                "[VolumeAlias] CLAMP_TO_MEDIA " +
+                                            HookLog.i("AudioMode") { "[VolumeAlias] CLAMP_TO_MEDIA " +
                                                     "${method.name}${method.parameterTypes.contentToString()} " +
-                                                    "stream=$stream requested=$index -> $expected music=$currentMusic uid=$uid"
-                                            )
+                                                    "stream=$stream requested=$index -> $expected music=$currentMusic uid=$uid" }
                                         }
                                     }
                                 }
@@ -762,7 +704,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                         }
                     }
                 }
-                HookLog.i(TAG, "[VolumeAlias] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[VolumeAlias] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }
         }.onFailure { HookLog.e(TAG, "[VolumeAlias] failed to hook volume alias family", it) }
     }
@@ -771,12 +713,8 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
         stream == AudioManager.STREAM_VOICE_CALL || stream == 6 // AudioManager.STREAM_BLUETOOTH_SCO = 6
 
     /** 把一个音量索引按范围等比映射到另一个范围（避免 clamp 到目标流最大档导致爆音）。 */
-    private fun scaleIndex(index: Int, fromMin: Int, fromMax: Int, toMin: Int, toMax: Int): Int {
-        if (fromMax <= fromMin || toMax <= toMin) return index
-        val span = fromMax - fromMin
-        val normalized = (index - fromMin).coerceIn(0, span)
-        return toMin + ((normalized.toLong() * (toMax - toMin) + span / 2) / span).toInt()
-    }
+    private fun scaleIndex(index: Int, fromMin: Int, fromMax: Int, toMin: Int, toMax: Int): Int =
+        io.github.fairyxh.ZhangSystemHook.core.VolumeScale.map(index, fromMin, fromMax, toMin, toMax)
 
     /** 把媒体音量按比例同步到 STREAM_VOICE_CALL / BLUETOOTH_SCO，让 VoIP 输出增益跟随音量键且不爆音。 */
     private fun syncVoiceCallToMusic(service: Any?) {
@@ -808,7 +746,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 runCatching { audioManager.setStreamVolume(6, scoIndex, 0) }
                     .onFailure { HookLog.e(TAG, "[VolumeAlias] sync sco failed", it) }
             }
-            HookLog.i(TAG, "[VolumeAlias] SYNC music=$musicIndex voiceCall=$voiceCallIndex sco=$scoIndex")
+            HookLog.i(TAG) { "[VolumeAlias] SYNC music=$musicIndex voiceCall=$voiceCallIndex sco=$scoIndex" }
         } finally {
             syncingVolumeAlias.set(false)
         }
@@ -818,7 +756,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
      * AudioSystem 隐藏常量：听筒输出设备 / 设备状态。
      */
     private const val DEVICE_OUT_EARPIECE = 0x00000001
-    private const val DEVICE_OUT_SPEAKER = 0x00000004
+    private const val DEVICE_OUT_SPEAKER = 0x00000002
     private const val DEVICE_STATE_UNAVAILABLE = 0
     private const val DEVICE_STATE_AVAILABLE = 1
     private const val EARPIECE_DISCONNECT_DELAY_MS = 5000L
@@ -858,6 +796,7 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         if (communicationModeBlocked()) {
                             val device = when {
                                 method.parameterTypes.isNotEmpty() &&
@@ -875,16 +814,13 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                             } else null
                             if (device == DEVICE_OUT_EARPIECE && state == DEVICE_STATE_AVAILABLE) {
                                 args[1] = DEVICE_STATE_UNAVAILABLE
-                                HookLog.i(
-                                    TAG,
-                                    "[Earpiece] REWRITE_EARPIECE_OFF ${method.name}${method.parameterTypes.contentToString()} " +
-                                        "args=${args.contentToString()}"
-                                )
+                                HookLog.i(TAG) { "[Earpiece] REWRITE_EARPIECE_OFF ${method.name}${method.parameterTypes.contentToString()} " +
+                                        "args=${args.contentToString()}" }
                             }
                         }
                     }
                 }
-                HookLog.i(TAG, "[Earpiece] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[Earpiece] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[Earpiece] hook failed: ${method.toGenericString()}", it)
             }
@@ -904,20 +840,18 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 method.isAccessible = true
                 method.hook {
                     before {
+                        if (!communicationModeBlocked()) return@before
                         if (communicationModeBlocked()) {
                             val device = firstInt(args)
                             if (device == DEVICE_OUT_EARPIECE) {
                                 result = DEVICE_STATE_UNAVAILABLE
-                                HookLog.i(
-                                    TAG,
-                                    "[Earpiece] REPORT_UNAVAILABLE ${method.name}${method.parameterTypes.contentToString()} " +
-                                        "args=${args.contentToString()}"
-                                )
+                                HookLog.i(TAG) { "[Earpiece] REPORT_UNAVAILABLE ${method.name}${method.parameterTypes.contentToString()} " +
+                                        "args=${args.contentToString()}" }
                             }
                         }
                     }
                 }
-                HookLog.i(TAG, "[Earpiece] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[Earpiece] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[Earpiece] hook failed: ${method.toGenericString()}", it)
             }
@@ -943,16 +877,13 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                             if (devices != null && devices and DEVICE_OUT_EARPIECE != 0) {
                                 val filtered = (devices and DEVICE_OUT_EARPIECE.inv()) or DEVICE_OUT_SPEAKER
                                 result = filtered
-                                HookLog.i(
-                                    TAG,
-                                    "[Earpiece] FILTER_DEVICE_MASK ${method.name}${method.parameterTypes.contentToString()} " +
-                                        "devices=$devices filtered=$filtered"
-                                )
+                                HookLog.i(TAG) { "[Earpiece] FILTER_DEVICE_MASK ${method.name}${method.parameterTypes.contentToString()} " +
+                                        "devices=$devices filtered=$filtered" }
                             }
                         }
                     }
                 }
-                HookLog.i(TAG, "[Earpiece] installed ${method.name}${method.parameterTypes.contentToString()}")
+                HookLog.i(TAG) { "[Earpiece] installed ${method.name}${method.parameterTypes.contentToString()}" }
             }.onFailure {
                 HookLog.e(TAG, "[Earpiece] hook failed: ${method.toGenericString()}", it)
             }
@@ -987,19 +918,13 @@ object AudioCommunicationModeHooker : YukiBaseHooker() {
                 else -> arrayOf<Any?>(DEVICE_OUT_EARPIECE, DEVICE_STATE_UNAVAILABLE, "")
             }
             method.invoke(null, *invokeArgs)
-            HookLog.i(TAG, "[Earpiece] disconnected earpiece via ${method.name}")
+            HookLog.i(TAG) { "[Earpiece] disconnected earpiece via ${method.name}" }
         }.onFailure {
             HookLog.e(TAG, "[Earpiece] disconnect failed", it)
         }
     }
 
-    private fun allMethods(clazz: Class<*>): List<Method> = buildList {
-        var current: Class<*>? = clazz
-        while (current != null) {
-            addAll(current.declaredMethods.filter { !java.lang.reflect.Modifier.isAbstract(it.modifiers) })
-            current = current.superclass
-        }
-    }
+    private fun allMethods(clazz: Class<*>): List<Method> = HookRuntime.methods(clazz)
 
     private fun firstIntParameterIndex(method: Method): Int = method.parameterTypes.indexOfFirst {
         it == Int::class.javaPrimitiveType || it == Int::class.javaObjectType

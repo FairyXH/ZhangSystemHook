@@ -1,75 +1,51 @@
 package io.github.fairyxh.ZhangSystemHook.hook
-import com.highcapable.yukihookapi.YukiHookAPI
-import com.highcapable.yukihookapi.annotation.xposed.InjectYukiHookWithXposed
-import com.highcapable.yukihookapi.hook.factory.configs
-import com.highcapable.yukihookapi.hook.factory.encase
-import com.highcapable.yukihookapi.hook.factory.method
-import com.highcapable.yukihookapi.hook.type.java.StringType
-import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
-import io.github.fairyxh.ZhangSystemHook.application.SystemNotifier
-import io.github.fairyxh.ZhangSystemHook.BuildConfig
-import io.github.fairyxh.ZhangSystemHook.data.ConfigData
-import io.github.fairyxh.ZhangSystemHook.data.ScreenshotConfig
-import io.github.fairyxh.ZhangSystemHook.utils.factory.isNotColorOS
-import de.robv.android.xposed.XposedBridge
 
+import android.util.Log
+import io.github.fairyxh.ZhangSystemHook.BuildConfig
+import io.github.fairyxh.ZhangSystemHook.core.BaseHooker
+import io.github.fairyxh.ZhangSystemHook.core.HookRuntime
+import io.github.fairyxh.ZhangSystemHook.data.ConfigData
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface.*
 
 object HookLog {
-    private const val PREFIX = "[ZhangSystemHook]"
-
-    fun d(tag: String, msg: String) = XposedBridge.log("$PREFIX/$tag: $msg")
-    fun i(tag: String, msg: String) = XposedBridge.log("$PREFIX/$tag: $msg")
-    fun w(tag: String, msg: String) = XposedBridge.log("$PREFIX/$tag: WARN $msg")
-    fun e(tag: String, msg: String, tr: Throwable? = null) {
-        XposedBridge.log("$PREFIX/$tag: ERROR $msg")
-        tr?.let { XposedBridge.log(it) }
-    }
+    fun d(tag: String, msg: () -> String) = HookRuntime.diagnostic(tag, msg)
+    fun i(tag: String, msg: () -> String) = HookRuntime.diagnostic(tag, msg)
+    fun w(tag: String, msg: String) = HookRuntime.log(Log.WARN, tag, msg)
+    fun e(tag: String, msg: String, tr: Throwable? = null) = HookRuntime.log(Log.ERROR, tag, msg, tr)
 }
 
-@InjectYukiHookWithXposed(entryClassName = "ZhangSystemHook", isUsingResourcesHook = false)
-class HookEntry : IYukiHookXposedInit {
-
-    override fun onInit() = configs {
-        debugLog {
-            tag = "ZhangSystemHook"
-            elements(TAG, PRIORITY)
-        }
-        YukiHookAPI.Configs.apply {
-            isDebug = false
+class HookEntry : XposedModule() {
+    private var systemInstalled = false
+    private val packages = mutableSetOf<String>()
+    override fun onModuleLoaded(param: ModuleLoadedParam) {
+        HookRuntime.api = this
+        runCatching { ConfigData.bind(getRemotePreferences(ConfigData.GROUP)) }
+            .onFailure { HookRuntime.log(Log.ERROR, "Module", "Remote preferences unavailable; defaults in use", it) }
+    }
+    override fun onSystemServerStarting(param: SystemServerStartingParam) {
+        if (systemInstalled) return
+        systemInstalled = true
+        HookRuntime.classLoader = param.classLoader
+        HookRuntime.packageName = "android"
+        install(AccessibilityHooker, DPMHooker, Android14ScreenshotBlocker, AudioCommunicationModeHooker)
+    }
+    override fun onPackageReady(param: PackageReadyParam) {
+        if (!param.isFirstPackage || !packages.add(param.packageName)) return
+        HookRuntime.classLoader = param.classLoader
+        HookRuntime.packageName = param.packageName
+        if (param.packageName == BuildConfig.APPLICATION_ID) return
+        HookRuntime.named("android.app.Application", "attach", after = {
+            HookRuntime.context = arg(0) as? android.content.Context
+        })
+        install(AccessibilityHooker)
+        if (param.packageName == "com.android.launcher") install(ColorOSHomeHooker)
+        // Install once in every scoped app; target membership and switches are checked per call.
+        install(EnhancedScreenshotBlocker)
+    }
+    private fun install(vararg hookers: BaseHooker) = hookers.forEach {
+        runCatching { it.onHook() }.onFailure { error ->
+            HookRuntime.log(Log.ERROR, "Module", "Failed: ${it.javaClass.simpleName}", error)
         }
     }
-
-    override fun onHook() = encase {
-        YukiHookAPI.Configs.isDebug = false
-
-        SystemNotifier.sendUserMsg(msg = "ZhangSystemHook 开始运行")
-        var targetPackages = emptySet<String>()
-        loadSystem {
-            ConfigData.init(this)
-            targetPackages = ScreenshotConfig.targetPackages.toSet()
-            loadHooker(AccessibilityHooker)
-            loadHooker(DPMHooker)
-            loadHooker(Android14ScreenshotBlocker)
-            loadHooker(AudioCommunicationModeHooker)
-        }
-        targetPackages
-            .filter { it != BuildConfig.APPLICATION_ID }
-            .forEach { targetPackage ->
-                loadApp(targetPackage) {
-                    ConfigData.init(instance = this)
-                    if (ScreenshotConfig.enableEnhancedBlocker) {
-                        loadHooker(EnhancedScreenshotBlocker)
-                    }
-                }
-            }
-        loadApp("com.android.launcher") {
-            ConfigData.init(instance = this)
-            if (isNotColorOS) {
-                SystemNotifier.sendUserMsg(msg ="非ColorOS系统,不加载ColorOS的功能")
-            } else {
-                loadHooker(ColorOSHomeHooker)
-            }
-        }
-    }
-
 }

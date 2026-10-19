@@ -117,7 +117,10 @@ object AccessibilityHooker : BaseHooker() {
         HookRuntime.named(manager, "getInstalledAccessibilityServiceList", "getAccessibilityServiceList",
             "getEnabledAccessibilityServiceList", before = { if (blocked()) result = emptyServices(method.returnType) })
         HookRuntime.named("android.provider.Settings\$Secure", "getInt", "getIntForUser", after = {
-            if (blocked() && args.any { it == Settings.Secure.ACCESSIBILITY_ENABLED }) result = 0
+            if (blocked() && args.filterIsInstance<String>().any {
+                it == Settings.Secure.ACCESSIBILITY_ENABLED ||
+                    (!ConfigData.flag("high_performance_mode", true) && it.contains("accessibility"))
+            }) result = 0
         }, filter = { it.returnType == Int::class.javaPrimitiveType })
         HookRuntime.named("android.provider.Settings\$Secure", "getString", "getStringForUser", after = {
             if (!blocked()) return@named
@@ -136,7 +139,13 @@ object AccessibilityHooker : BaseHooker() {
         HookRuntime.named("android.content.ContentResolver", "query", after = {
             if (!blocked(extended = true)) return@named
             val uri = args.firstOrNull { it is Uri } as? Uri ?: return@named
-            if (uri.authority == "settings" && uri.toString().contains("accessibility", true)) {
+            val keys = args.flatMap { value -> when (value) {
+                is String -> listOf(value)
+                is Array<*> -> value.filterIsInstance<String>()
+                else -> emptyList()
+            } }
+            if (uri.authority in setOf("settings", "com.android.settings.provider.settings") &&
+                (uri.toString().contains("accessibility", true) || keys.any { it.contains("accessibility", true) })) {
                 (result as? android.database.Cursor)?.close()
                 result = MatrixCursor(arrayOf("value"))
             }
@@ -157,7 +166,9 @@ object AccessibilityHooker : BaseHooker() {
         })
         HookRuntime.named("android.app.ActivityManager", "getRunningServices", after = {
             if (blocked(extended = true)) result = (result as? List<*>)?.filter {
-                !it.toString().contains("accessibility", true)
+                val service = (it as? android.app.ActivityManager.RunningServiceInfo)?.service?.flattenToString()
+                    ?: it.toString()
+                !service.contains("accessibility", true)
             } ?: emptyList<Any>()
         })
         HookRuntime.named("android.os.ServiceManager", "getService", after = {

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Binder
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
@@ -293,8 +294,13 @@ object AudioCommunicationModeHooker : BaseHooker() {
                             val privileged = context?.let { hasRoutingPrivilege(it) } ?: true
                             val systemApp = isSystemApplication(context, uid)
                             val bluetoothActive = runCatching {
-                                context?.getSystemService(AudioManager::class.java)?.communicationDevice
-                                    ?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                                val audio = context?.getSystemService(AudioManager::class.java)
+                                if (Build.VERSION.SDK_INT >= 31) {
+                                    audio?.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    audio?.isBluetoothScoOn == true
+                                }
                             }.getOrDefault(false)
                             // 系统/特权调用与蓝牙耳机场景放行，避免切回扬声器打断蓝牙音频
                             if (!privileged && !systemApp && !bluetoothActive) {
@@ -407,6 +413,7 @@ object AudioCommunicationModeHooker : BaseHooker() {
     }
 
     private fun rewriteCommunicationDeviceId(audioService: Any?, args: Array<Any?>) {
+        if (Build.VERSION.SDK_INT < 31) return
         val uid = Binder.getCallingUid()
         val context = findContext(audioService)
         val packageName = resolvePackageName(context, uid)
@@ -503,6 +510,7 @@ object AudioCommunicationModeHooker : BaseHooker() {
 
     /** 参数形状为 (IBinder, AudioDeviceInfo) 的 OEM 变体（如 ColorOS 扩展），同样强制扬声器。 */
     private fun rewriteCommunicationDeviceInfo(audioService: Any?, args: Array<Any?>) {
+        if (Build.VERSION.SDK_INT < 31) return
         val uid = Binder.getCallingUid()
         val context = findContext(audioService)
         val packageName = resolvePackageName(context, uid)

@@ -4,6 +4,26 @@ plugins {
     id("com.android.application")
 }
 
+abstract class FilterResourcesTask : DefaultTask() {
+    @get:Internal abstract val sourceDirectory: DirectoryProperty
+    @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    val resources: FileTree get() = sourceDirectory.asFileTree.matching { exclude("**/*.baiduyun.*") }
+    @TaskAction fun stage() {
+        project.sync {
+            from(resources)
+            into(outputDirectory)
+            includeEmptyDirs = false
+        }
+    }
+}
+
+val filteredResources = tasks.register<FilterResourcesTask>("filterMainResources") {
+    sourceDirectory.set(layout.projectDirectory.dir("src/main/res"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/filteredMainResources"))
+}
+
 val savedVersion = Properties().apply {
     rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }.getProperty("VERSION_CODE", "1").toInt()
@@ -32,9 +52,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { buildConfig = true }
+    sourceSets.named("main") { res.setSrcDirs(emptyList<String>()) }
     packaging.resources.merges += "META-INF/xposed/*"
     androidResources.ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:CVS:thumbs.db:picasa.ini:*~:*.baiduyun.*"
     lint { checkReleaseBuilds = true }
+}
+
+androidComponents.onVariants { variant ->
+    variant.sources.res?.addGeneratedSourceDirectory(filteredResources) { it.outputDirectory }
 }
 dependencies {
     compileOnly("io.github.libxposed:api:102.0.0")
